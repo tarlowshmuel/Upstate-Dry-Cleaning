@@ -76,8 +76,15 @@ export async function geocodeColony(
     };
   }
 
+  // If the addressHint already mentions the town or "NY", use it verbatim —
+  // re-appending ", <town>, NY" duplicates context and confuses Nominatim,
+  // which has been observed to drop the zip and snap to a same-named street
+  // in another part of NY State (e.g. "26 Park St, Liberty, NY 12754" → Albany).
+  const hint = addressHint?.trim();
+  const hintHasContext =
+    !!hint && (hint.toLowerCase().includes(town.toLowerCase()) || /\bny\b/i.test(hint));
   const queries: string[] = [];
-  if (addressHint) queries.push(`${addressHint}, ${town}, NY`);
+  if (hint) queries.push(hintHasContext ? hint : `${hint}, ${town}, NY`);
   queries.push(`${colony}, ${town}, NY`);
   queries.push(`${town}, NY`);
 
