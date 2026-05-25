@@ -1,7 +1,4 @@
-import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
 
 const BUSINESS_NAME = "Dry Cleaning Service";
 const SERVICE_AREA = "Sullivan County, NY";
@@ -13,13 +10,6 @@ export default function Legal() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-4 py-8">
-        <Link href="/">
-          <Button variant="ghost" size="sm" className="mb-6 gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back to dashboard
-          </Button>
-        </Link>
-
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">Privacy Policy &amp; Terms of Service</h1>
           <p className="text-sm text-muted-foreground mt-2">
