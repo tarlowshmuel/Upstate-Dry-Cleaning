@@ -162,24 +162,53 @@ export default function Dashboard() {
   });
 
   const [range, setRange] = useState<"today" | "week" | "all">("all");
+  const [sortBy, setSortBy] = useState<
+    "newest" | "oldest" | "pickup_soonest" | "pickup_latest" | "name"
+  >("newest");
 
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
 
-  const filteredOrders = (orders ?? []).filter((o) => {
-    if (range === "all") return true;
-    if (!o.pickupDate) return false;
-    if (range === "today") return o.pickupDate === today;
-    if (range === "week") {
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      const min = new Date(now); min.setDate(min.getDate() - 7);
-      const max = new Date(now); max.setDate(max.getDate() + 7);
-      const p = new Date(o.pickupDate + "T00:00:00");
-      return p >= min && p <= max;
-    }
-    return true;
-  });
+  const filteredOrders = (orders ?? [])
+    .filter((o) => {
+      if (range === "all") return true;
+      if (!o.pickupDate) return false;
+      if (range === "today") return o.pickupDate === today;
+      if (range === "week") {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const min = new Date(now); min.setDate(min.getDate() - 7);
+        const max = new Date(now); max.setDate(max.getDate() + 7);
+        const p = new Date(o.pickupDate + "T00:00:00");
+        return p >= min && p <= max;
+      }
+      return true;
+    })
+    .slice()
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "newest":
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case "oldest":
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case "pickup_soonest": {
+          if (!a.pickupDate && !b.pickupDate) return 0;
+          if (!a.pickupDate) return 1;
+          if (!b.pickupDate) return -1;
+          return a.pickupDate.localeCompare(b.pickupDate);
+        }
+        case "pickup_latest": {
+          if (!a.pickupDate && !b.pickupDate) return 0;
+          if (!a.pickupDate) return 1;
+          if (!b.pickupDate) return -1;
+          return b.pickupDate.localeCompare(a.pickupDate);
+        }
+        case "name":
+          return a.name.localeCompare(b.name);
+        default:
+          return 0;
+      }
+    });
 
   const counts = orders
     ? {
@@ -267,22 +296,36 @@ export default function Dashboard() {
                   ID numbers shown here are the same IDs used in the SMS admin menu (text <span className="font-mono text-foreground">menu</span> to your Twilio number).
                 </CardDescription>
               </div>
-              <ToggleGroup
-                type="single"
-                value={range}
-                onValueChange={(v) => v && setRange(v as "today" | "week" | "all")}
-                className="bg-background border border-border/60 rounded-md p-0.5"
-              >
-                <ToggleGroupItem value="today" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                  Today
-                </ToggleGroupItem>
-                <ToggleGroupItem value="week" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                  This Week
-                </ToggleGroupItem>
-                <ToggleGroupItem value="all" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                  All Time
-                </ToggleGroupItem>
-              </ToggleGroup>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                  <SelectTrigger className="h-8 w-[180px] text-xs border-border/60 bg-background">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest" className="text-xs">Newest first</SelectItem>
+                    <SelectItem value="oldest" className="text-xs">Oldest first</SelectItem>
+                    <SelectItem value="pickup_soonest" className="text-xs">Pickup date (soonest)</SelectItem>
+                    <SelectItem value="pickup_latest" className="text-xs">Pickup date (latest)</SelectItem>
+                    <SelectItem value="name" className="text-xs">Customer name (A–Z)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <ToggleGroup
+                  type="single"
+                  value={range}
+                  onValueChange={(v) => v && setRange(v as "today" | "week" | "all")}
+                  className="bg-background border border-border/60 rounded-md p-0.5"
+                >
+                  <ToggleGroupItem value="today" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    Today
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="week" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    This Week
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="all" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    All Time
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
