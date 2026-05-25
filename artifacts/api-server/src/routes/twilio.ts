@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import twilio from "twilio";
 import { db } from "@workspace/db";
 import { conversationsTable, ordersTable } from "@workspace/db/schema";
@@ -717,8 +717,51 @@ function buildConfirmationSms(order: {
   ].join("\n");
 }
 
+// ─── Twilio signature validation ──────────────────────────────────────────────
+// Validates `X-Twilio-Signature` so that only requests genuinely signed with
+// our TWILIO_AUTH_TOKEN can hit the webhook. Without this, anyone who knows
+// the URL + admin phone number could spoof admin SMS commands.
+//
+// In production we hard-fail on missing token or invalid signature.
+// In dev (no TWILIO_AUTH_TOKEN configured) we log a warning and allow the
+// request so curl-based testing still works.
+const verifyTwilioSignature: RequestHandler = (req, res, next) => {
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!token) {
+    if (process.env.NODE_ENV === "production") {
+      req.log.error("TWILIO_AUTH_TOKEN not set in production — rejecting webhook");
+      res.status(500).send("Webhook validation not configured");
+      return;
+    }
+    req.log.warn("TWILIO_AUTH_TOKEN not set — skipping Twilio signature check (dev only)");
+    next();
+    return;
+  }
+
+  const signature = req.header("X-Twilio-Signature") ?? "";
+  if (!signature) {
+    req.log.warn({ ip: req.ip }, "Missing X-Twilio-Signature header — rejecting");
+    res.status(403).send("Forbidden");
+    return;
+  }
+
+  // Twilio signs the absolute URL it POSTed to (including query string) plus
+  // the form-encoded parameters. Behind our reverse proxy, req.protocol/host
+  // can be wrong, so we reconstruct from the configured PUBLIC_URL.
+  const url = `${PUBLIC_URL.replace(/\/$/, "")}${req.originalUrl}`;
+  const params = (req.body ?? {}) as Record<string, string>;
+
+  const valid = twilio.validateRequest(token, signature, url, params);
+  if (!valid) {
+    req.log.warn({ url, ip: req.ip }, "Invalid Twilio signature — rejecting");
+    res.status(403).send("Forbidden");
+    return;
+  }
+  next();
+};
+
 // ─── Webhook ──────────────────────────────────────────────────────────────────
-router.post("/webhook/twilio", async (req, res) => {
+router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
   const body = req.body as { Body?: string; From?: string };
   const from = (body.From ?? "").trim();
   const raw = (body.Body ?? "").trim();
@@ -957,7 +1000,7 @@ router.post("/webhook/twilio", async (req, res) => {
 // ─── Fallback Webhook ─────────────────────────────────────────────────────────
 // Twilio calls this if the primary webhook above fails (timeout, 5xx, etc.).
 // Returns a graceful message so the customer isn't left hanging.
-router.post("/webhook/twilio-fallback", (req, res) => {
+router.post("/webhook/twilio-fallback", verifyTwilioSignature, (req, res) => {
   res.setHeader("Content-Type", "text/xml");
   res.send(
     twimlResponse(
