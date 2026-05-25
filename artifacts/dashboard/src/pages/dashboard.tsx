@@ -2,6 +2,7 @@ import {
   useListOrders,
   getListOrdersQueryKey,
   useUpdateOrderStatus,
+  useUpdateOrderPaid,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -23,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, Navigation } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, Navigation, DollarSign, CircleDashed, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function ItemsList({ text }: { text: string | null | undefined }) {
@@ -33,7 +34,7 @@ function ItemsList({ text }: { text: string | null | undefined }) {
 
 const DRIVER_START = "458 Riverside Drive, Sullivan County, NY";
 
-function buildRouteUrl(orders: Array<{ colonyAddress: string | null; colony: string; town: string }>): string {
+function buildRouteUrl(orders: Array<{ colonyAddress?: string | null; colony: string; town: string }>): string {
   const waypoints = orders
     .map((o) => [o.colonyAddress, o.colony, o.town, "NY"].filter(Boolean).join(", "))
     .map(encodeURIComponent)
@@ -55,7 +56,6 @@ const STATUSES = [
   { value: "pending", label: "Pending" },
   { value: "picked_up", label: "Picked Up" },
   { value: "delivered", label: "Delivered" },
-  { value: "paid", label: "Paid" },
   { value: "missed", label: "Missed" },
 ];
 
@@ -63,7 +63,6 @@ const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 border-amber-200",
   picked_up: "bg-blue-100 text-blue-800 border-blue-200",
   delivered: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  paid: "bg-violet-100 text-violet-800 border-violet-200",
   missed: "bg-red-100 text-red-800 border-red-200",
 };
 
@@ -74,6 +73,43 @@ function StatusBadge({ status }: { status: string }) {
     <Badge variant="outline" className={`font-medium border ${cls}`}>
       {label}
     </Badge>
+  );
+}
+
+function PaidToggle({ orderId, paid }: { orderId: number; paid: boolean }) {
+  const queryClient = useQueryClient();
+  const { mutate, isPending } = useUpdateOrderPaid({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      },
+    },
+  });
+
+  return (
+    <Button
+      size="sm"
+      variant={paid ? "default" : "outline"}
+      disabled={isPending}
+      onClick={() => mutate({ id: orderId, data: { paid: !paid } })}
+      className={
+        paid
+          ? "h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+          : "h-8 gap-1.5 border-border/60 text-muted-foreground hover:text-foreground"
+      }
+    >
+      {paid ? (
+        <>
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Paid
+        </>
+      ) : (
+        <>
+          <CircleDashed className="w-3.5 h-3.5" />
+          Unpaid
+        </>
+      )}
+    </Button>
   );
 }
 
@@ -130,6 +166,7 @@ export default function Dashboard() {
         picked_up: orders.filter((o) => o.status === "picked_up").length,
         total: orders.length,
         todaysPickups: todaysPickups.length,
+        unpaid: orders.filter((o) => !o.paid).length,
       }
     : null;
 
@@ -169,12 +206,13 @@ export default function Dashboard() {
 
         {/* Summary strip */}
         {counts && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
               { label: "Today's Pickups", value: counts.todaysPickups, color: "text-primary" },
               { label: "Total Orders", value: counts.total, color: "text-foreground" },
               { label: "Pending", value: counts.pending, color: "text-amber-600" },
               { label: "At Cleaners", value: counts.picked_up, color: "text-blue-600" },
+              { label: "Unpaid", value: counts.unpaid, color: "text-rose-600" },
             ].map((stat) => (
               <Card key={stat.label} className="border-border/50 shadow-sm">
                 <CardContent className="p-4">
@@ -226,7 +264,7 @@ export default function Dashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/60">
-                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Pickup"].map((h) => (
+                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Paid", "Pickup"].map((h) => (
                         <TableHead key={h} className="font-medium text-xs uppercase tracking-wider text-muted-foreground py-3">
                           {h}
                         </TableHead>
@@ -309,6 +347,11 @@ export default function Dashboard() {
                           </div>
                         </TableCell>
 
+                        {/* Paid toggle */}
+                        <TableCell className="py-4 w-[110px]">
+                          <PaidToggle orderId={order.id} paid={order.paid} />
+                        </TableCell>
+
                         {/* Pickup date */}
                         <TableCell className="py-4 w-[140px]">
                           <div className="flex flex-col gap-0.5 items-start">
@@ -348,8 +391,10 @@ export default function Dashboard() {
                 { cmd: "stats today", desc: "Items being picked up today" },
                 { cmd: "stats week", desc: "Items this past week" },
                 { cmd: "customer [id]", desc: "Order details" },
+                { cmd: "unpaid", desc: "List unpaid orders" },
                 { cmd: "mark completed [id]", desc: "Mark picked up" },
                 { cmd: "mark paid [id]", desc: "Mark paid" },
+                { cmd: "mark unpaid [id]", desc: "Mark unpaid" },
                 { cmd: "missed [id]", desc: "Mark missed" },
                 { cmd: "help", desc: "List commands" },
               ].map(({ cmd, desc }) => (

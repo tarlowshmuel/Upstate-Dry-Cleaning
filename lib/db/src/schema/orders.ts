@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, date, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -15,6 +15,7 @@ export const ordersTable = pgTable("orders", {
   items: text("items"),
   pickupDate: date("pickup_date"),
   status: text("status").notNull().default("pending"),
+  paid: boolean("paid").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

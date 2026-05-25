@@ -26,10 +26,15 @@ export interface Order {
   /** @nullable */
   pickupDate?: string | null;
   status: string;
+  paid: boolean;
   createdAt: string;
 }
 
 export interface OrderStatusUpdate {
   status: string;
+}
+
+export interface OrderPaidUpdate {
+  paid: boolean;
 }
 

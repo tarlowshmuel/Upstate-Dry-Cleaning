@@ -65,6 +65,32 @@ paths:
                 $ref: "#/components/schemas/Order"
         "404":
           description: Order not found
+  /orders/{id}/paid:
+    patch:
+      operationId: updateOrderPaid
+      tags: [orders]
+      summary: Update order paid flag
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderPaidUpdate"
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Order not found
 components:
   schemas:
     HealthStatus:
@@ -102,6 +128,8 @@ components:
           format: date
         status:
           type: string
+        paid:
+          type: boolean
         createdAt:
           type: string
           format: date-time
@@ -114,6 +142,7 @@ components:
         - colony
         - unitNumber
         - status
+        - paid
         - createdAt
     OrderStatusUpdate:
       type: object
@@ -122,3 +151,10 @@ components:
           type: string
       required:
         - status
+    OrderPaidUpdate:
+      type: object
+      properties:
+        paid:
+          type: boolean
+      required:
+        - paid

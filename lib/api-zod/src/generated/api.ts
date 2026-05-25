@@ -32,6 +32,7 @@ export const ListOrdersResponseItem = zod.object({
   "items": zod.string().nullish(),
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
+  "paid": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem)
@@ -61,6 +62,36 @@ export const UpdateOrderStatusResponse = zod.object({
   "items": zod.string().nullish(),
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
+  "paid": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update order paid flag
+ */
+export const UpdateOrderPaidParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateOrderPaidBody = zod.object({
+  "paid": zod.boolean()
+})
+
+export const UpdateOrderPaidResponse = zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "phoneNumber": zod.string(),
+  "name": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
+  "status": zod.string(),
+  "paid": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
 

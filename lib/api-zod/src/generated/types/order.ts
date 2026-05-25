@@ -23,5 +23,6 @@ export interface Order {
   /** @nullable */
   pickupDate?: Date | null;
   status: string;
+  paid: boolean;
   createdAt: Date;
 }

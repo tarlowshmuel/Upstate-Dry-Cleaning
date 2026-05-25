@@ -22,6 +22,7 @@ import type {
 import type {
   HealthStatus,
   Order,
+  OrderPaidUpdate,
   OrderStatusUpdate
 } from './api.schemas';
 
@@ -261,5 +262,77 @@ export const useUpdateOrderStatus = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateOrderStatusMutationOptions(options));
+    }
+
+export const getUpdateOrderPaidUrl = (id: number,) => {
+
+
+
+
+  return `/api/orders/${id}/paid`
+}
+
+/**
+ * @summary Update order paid flag
+ */
+export const updateOrderPaid = async (id: number,
+    orderPaidUpdate: OrderPaidUpdate, options?: RequestInit): Promise<Order> => {
+
+  return customFetch<Order>(getUpdateOrderPaidUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      orderPaidUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateOrderPaidMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderPaid>>, TError,{id: number;data: BodyType<OrderPaidUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrderPaid>>, TError,{id: number;data: BodyType<OrderPaidUpdate>}, TContext> => {
+
+const mutationKey = ['updateOrderPaid'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrderPaid>>, {id: number;data: BodyType<OrderPaidUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateOrderPaid(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrderPaidMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrderPaid>>>
+    export type UpdateOrderPaidMutationBody = BodyType<OrderPaidUpdate>
+    export type UpdateOrderPaidMutationError = ErrorType<void>
+
+    /**
+ * @summary Update order paid flag
+ */
+export const useUpdateOrderPaid = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderPaid>>, TError,{id: number;data: BodyType<OrderPaidUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrderPaid>>,
+        TError,
+        {id: number;data: BodyType<OrderPaidUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateOrderPaidMutationOptions(options));
     }
 

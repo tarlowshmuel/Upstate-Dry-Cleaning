@@ -131,7 +131,8 @@ function formatOrder(o: OrderRow): string {
   const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
   const itemsStr = o.items ?? "(none)";
   const pickup = o.pickupDate ? `Pickup: ${o.pickupDate}\n` : "";
-  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}\n${pickup}Status: ${o.status}`;
+  const paid = o.paid ? "PAID ✓" : "UNPAID";
+  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}\n${pickup}Status: ${o.status} | ${paid}`;
 }
 
 // ─── Admin Commands ────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ async function handleAdminCommand(text: string): Promise<string> {
       "today pickups",
       "today returns",
       "pending",
+      "unpaid",
       "route",
       "stats",
       "stats today",
@@ -149,6 +151,7 @@ async function handleAdminCommand(text: string): Promise<string> {
       "customer [id]",
       "mark completed [id]",
       "mark paid [id]",
+      "mark unpaid [id]",
       "missed [id]",
     ].join("\n");
   }
@@ -287,8 +290,26 @@ async function handleAdminCommand(text: string): Promise<string> {
     const id = parseInt(paidMatch[1]!);
     const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
     if (!order) return `Order #${id} not found.`;
-    await db.update(ordersTable).set({ status: "paid" }).where(eq(ordersTable.id, id));
-    return `Order #${id} (${order.name}) — marked paid.`;
+    await db.update(ordersTable).set({ paid: true }).where(eq(ordersTable.id, id));
+    return `Order #${id} (${order.name}) — marked PAID ✓`;
+  }
+
+  const unpaidMatch = text.match(/^mark unpaid (\d+)$/);
+  if (unpaidMatch) {
+    const id = parseInt(unpaidMatch[1]!);
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+    if (!order) return `Order #${id} not found.`;
+    await db.update(ordersTable).set({ paid: false }).where(eq(ordersTable.id, id));
+    return `Order #${id} (${order.name}) — marked UNPAID.`;
+  }
+
+  if (text === "unpaid") {
+    const orders = await db
+      .select().from(ordersTable)
+      .where(eq(ordersTable.paid, false))
+      .orderBy(desc(ordersTable.createdAt));
+    if (orders.length === 0) return "All orders are paid. 🎉";
+    return `UNPAID (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
   }
 
   const missedMatch = text.match(/^missed (\d+)$/);
