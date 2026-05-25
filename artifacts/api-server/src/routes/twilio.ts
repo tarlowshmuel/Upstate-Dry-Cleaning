@@ -710,32 +710,40 @@ router.post("/webhook/twilio", async (req, res) => {
 
   if (step === "colony") {
     await db.update(conversationsTable)
-      .set({ colony: raw, step: "colonyAddress", updatedAt: new Date() })
+      .set({ colony: raw, step: "location_details", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
-    res.send(twimlResponse("What is the street address of your colony? (e.g. 123 Main St)"));
+    res.send(twimlResponse(
+      `Got it! Please reply with the following on separate lines:\n\n` +
+      `1. Street address\n` +
+      `2. Unit or house number\n` +
+      `3. Gate code (or type "none")\n\n` +
+      `Example:\n458 Riverside Dr\nUnit 50\nnone`
+    ));
     return;
   }
 
-  if (step === "colonyAddress") {
+  if (step === "location_details") {
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length < 3) {
+      res.send(twimlResponse(
+        `Please send all three on separate lines:\n\n` +
+        `1. Street address\n` +
+        `2. Unit or house number\n` +
+        `3. Gate code (or type "none")\n\n` +
+        `Example:\n458 Riverside Dr\nUnit 50\nnone`
+      ));
+      return;
+    }
+    const [streetAddress, unitNumber, gateRaw] = lines;
+    const gateAccess = gateRaw!.toLowerCase() === "none" || gateRaw!.toLowerCase() === "no" ? null : gateRaw!;
     await db.update(conversationsTable)
-      .set({ colonyAddress: raw, step: "unit", updatedAt: new Date() })
-      .where(eq(conversationsTable.phoneNumber, from));
-    res.send(twimlResponse("What is your unit or house number?"));
-    return;
-  }
-
-  if (step === "unit") {
-    await db.update(conversationsTable)
-      .set({ unitNumber: raw, step: "gate", updatedAt: new Date() })
-      .where(eq(conversationsTable.phoneNumber, from));
-    res.send(twimlResponse('Does your building have a gate?\n\nIf yes, reply with the code or access instructions.\nIf no, just reply "no".'));
-    return;
-  }
-
-  if (step === "gate") {
-    const gateAccess = text === "no" ? null : raw;
-    await db.update(conversationsTable)
-      .set({ gateAccess, step: "items", updatedAt: new Date() })
+      .set({
+        colonyAddress: streetAddress!,
+        unitNumber: unitNumber!,
+        gateAccess,
+        step: "items",
+        updatedAt: new Date(),
+      })
       .where(eq(conversationsTable.phoneNumber, from));
     res.send(twimlResponse(
       `What items are you sending in for cleaning?\n\nList them with quantities, for example:\n"2 suits, 3 dress shirts, 1 coat"`
