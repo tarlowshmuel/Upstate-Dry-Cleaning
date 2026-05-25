@@ -31,7 +31,7 @@ const DAY_NUM: Record<string, number> = {
   Thursday: 4, Friday: 5, Saturday: 6,
 };
 
-const DRIVER_START = process.env.DRIVER_START_ADDRESS ?? "458 Riverside Drive, Sullivan County, NY";
+const DRIVER_START = process.env.DRIVER_START_ADDRESS ?? "458 Riverside Drive, Fallsburg, NY";
 const DRIVER_END = process.env.DRY_CLEANERS_ADDRESS ?? DRIVER_START;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

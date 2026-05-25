@@ -32,7 +32,7 @@ function ItemsList({ text }: { text: string | null | undefined }) {
   return <span className="text-xs text-foreground">{text}</span>;
 }
 
-const DRIVER_START = "458 Riverside Drive, Sullivan County, NY";
+const DRIVER_START = "458 Riverside Drive, Fallsburg, NY";
 
 function buildRouteUrl(orders: Array<{ colonyAddress?: string | null; colony: string; town: string }>): string {
   const waypoints = orders
@@ -65,6 +65,19 @@ const STATUS_STYLES: Record<string, string> = {
   delivered: "bg-emerald-100 text-emerald-800 border-emerald-200",
   missed: "bg-red-100 text-red-800 border-red-200",
 };
+
+function rowClass(order: { status: string; paid: boolean }): string {
+  const complete = order.status === "delivered" && order.paid;
+  const missed = order.status === "missed";
+  if (complete) {
+    return "bg-emerald-50/70 hover:bg-emerald-100/70 border-l-4 border-l-emerald-500";
+  }
+  if (missed) {
+    return "bg-red-50/60 hover:bg-red-100/60 border-l-4 border-l-red-500";
+  }
+  // unfinished — soft amber tint
+  return "bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-400";
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cls = STATUS_STYLES[status] ?? "bg-muted text-muted-foreground border-border";
@@ -275,7 +288,7 @@ export default function Dashboard() {
                     {orders.map((order) => (
                       <TableRow
                         key={order.id}
-                        className="hover:bg-muted/40 transition-colors group border-b border-border/40 last:border-0"
+                        className={`transition-colors group border-b border-border/40 last:border-0 ${rowClass(order)}`}
                       >
                         {/* ID */}
                         <TableCell className="py-4 w-[56px]">
