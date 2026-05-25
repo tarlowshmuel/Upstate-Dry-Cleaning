@@ -13,6 +13,7 @@ export const conversationsTable = pgTable("conversations", {
   unitNumber: text("unit_number"),
   gateAccess: text("gate_access"),
   items: text("items"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -13,6 +13,7 @@ export const ordersTable = pgTable("orders", {
   unitNumber: text("unit_number").notNull(),
   gateAccess: text("gate_access"),
   items: text("items"),
+  notes: text("notes"),
   pickupDate: date("pickup_date"),
   status: text("status").notNull().default("pending"),
   paid: boolean("paid").notNull().default(false),

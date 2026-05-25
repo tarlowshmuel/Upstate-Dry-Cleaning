@@ -154,10 +154,11 @@ type OrderRow = typeof ordersTable.$inferSelect;
 function formatOrder(o: OrderRow): string {
   const gate = o.gateAccess ? `Gate: ${o.gateAccess}` : "No gate";
   const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
+  const notesLine = o.notes ? `\n📝 Notes: ${o.notes}` : "";
   const itemsStr = o.items ?? "(none)";
   const pickup = o.pickupDate ? `Pickup: ${o.pickupDate}\n` : "";
   const paid = o.paid ? "PAID ✓" : "UNPAID";
-  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}\n${pickup}Status: ${o.status} | ${paid}`;
+  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
 }
 
 // ─── Admin Menu System ─────────────────────────────────────────────────────────
@@ -611,10 +612,12 @@ function buildConfirmationSms(order: {
   colonyAddress: string | null;
   unitNumber: string;
   items: string | null;
+  notes: string | null;
   pickupDate: Date;
 }): string {
   const dropoff = nextDropoffDate(order.pickupDate);
   const addr = order.colonyAddress ? `${order.colonyAddress}, ` : "";
+  const notesBlock = order.notes ? [``, `📝 Notes: ${order.notes}`] : [];
 
   return [
     `✅ Order Confirmed — ${order.orderNumber}`,
@@ -623,6 +626,7 @@ function buildConfirmationSms(order: {
     `   ${order.town}`,
     ``,
     `📦 Items: ${order.items ?? "(none)"}`,
+    ...notesBlock,
     ``,
     `📅 Pickup: ${formatLongDate(order.pickupDate)}`,
     `📅 Drop-off by: ${formatLongDate(dropoff)}`,
@@ -850,44 +854,60 @@ router.post("/webhook/twilio", async (req, res) => {
     }
 
     if (text === "confirm") {
-      const pickupDate = nextPickupDate(convo.town!);
-      if (!pickupDate) {
-        res.send(twimlResponse(`Sorry, we don't service ${convo.town} yet. Please text "clean" to start over.`));
-        return;
-      }
-
-      const orderNumber = generateOrderNumber();
-      await db.insert(ordersTable).values({
-        orderNumber,
-        phoneNumber: from,
-        name: convo.name!,
-        town: convo.town!,
-        colony: convo.colony!,
-        colonyAddress: convo.colonyAddress ?? null,
-        unitNumber: convo.unitNumber!,
-        gateAccess: convo.gateAccess,
-        items: convo.items,
-        pickupDate: toDateOnly(pickupDate),
-        status: "pending",
-      });
-
-      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
-
-      res.send(twimlResponse(buildConfirmationSms({
-        orderNumber,
-        town: convo.town!,
-        colony: convo.colony!,
-        colonyAddress: convo.colonyAddress ?? null,
-        unitNumber: convo.unitNumber!,
-        items: convo.items,
-        pickupDate,
-      })));
+      await db.update(conversationsTable)
+        .set({ step: "notes", updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Any special notes for our driver? (e.g. "I won't be home 2–4pm, bag is by the door")\n\n` +
+        `These won't affect your pickup or delivery — just helpful info for us.\n\n` +
+        `Reply with your note, or text "skip" if none.`
+      ));
       return;
     }
 
     res.send(twimlResponse(
       `Please reply CONFIRM to place your order or EDIT to change items.\n\nYour items: ${convo.items ?? "(none)"}`
     ));
+    return;
+  }
+
+  if (step === "notes") {
+    const notes = text === "skip" || text === "none" || text === "no" ? null : raw;
+    const pickupDate = nextPickupDate(convo.town!);
+    if (!pickupDate) {
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(`Sorry, we don't service ${convo.town} yet. Please text "clean" to start over.`));
+      return;
+    }
+
+    const orderNumber = generateOrderNumber();
+    await db.insert(ordersTable).values({
+      orderNumber,
+      phoneNumber: from,
+      name: convo.name!,
+      town: convo.town!,
+      colony: convo.colony!,
+      colonyAddress: convo.colonyAddress ?? null,
+      unitNumber: convo.unitNumber!,
+      gateAccess: convo.gateAccess,
+      items: convo.items,
+      notes,
+      pickupDate: toDateOnly(pickupDate),
+      status: "pending",
+    });
+
+    await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+
+    res.send(twimlResponse(buildConfirmationSms({
+      orderNumber,
+      town: convo.town!,
+      colony: convo.colony!,
+      colonyAddress: convo.colonyAddress ?? null,
+      unitNumber: convo.unitNumber!,
+      items: convo.items,
+      notes,
+      pickupDate,
+    })));
     return;
   }
 
