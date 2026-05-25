@@ -63,22 +63,63 @@ const PAYMENT_PHONE = "(929) 345-0940";
 const PUBLIC_URL = process.env.PUBLIC_URL ?? "https://twilio-connect-shmueltarlow.replit.app";
 const TERMS_URL = `${PUBLIC_URL}/legal`;
 
-// Price list shown to customers right before they list their items.
-// Set to an empty array once you have real prices, then list "Item: $X" per line.
-const PRICE_LIST: Array<{ item: string; price: string }> = [
-  // Example (delete and replace once you have your real list):
-  // { item: "Suit (2-piece)", price: "$12" },
-  // { item: "Dress shirt",    price: "$4"  },
-  // { item: "Dress",          price: "$10" },
-  // { item: "Coat",           price: "$20" },
+// Price list shown to customers + used to compute receipt totals.
+// `keywords` are lowercase forms (any of them in the customer's text counts as a match).
+// Add real prices here when ready — totals appear on receipts automatically.
+type PriceEntry = { label: string; price: number; keywords: string[] };
+const PRICE_LIST: PriceEntry[] = [
+  // Example (replace with real prices when set):
+  // { label: "Suit (2-piece)", price: 12, keywords: ["suit", "suits", "2-piece"] },
+  // { label: "Dress shirt",    price:  4, keywords: ["dress shirt", "shirt", "shirts", "button down"] },
+  // { label: "Dress",          price: 10, keywords: ["dress", "dresses"] },
+  // { label: "Coat",           price: 20, keywords: ["coat", "coats", "jacket", "jackets"] },
 ];
 
 function priceListBlock(): string {
   if (PRICE_LIST.length === 0) {
     return `💲 Pricing: We'll confirm pricing with you on pickup. Standard dry cleaning rates apply.`;
   }
-  const lines = PRICE_LIST.map((p) => `  • ${p.item} — ${p.price}`).join("\n");
-  return `💲 Price list:\n${lines}\n  • Other items — ask on pickup`;
+  const lines = PRICE_LIST.map((p) => `  • ${p.label} — $${p.price}`).join("\n");
+  return `💲 Price list (per item):\n${lines}\n  • Other items — ask on pickup`;
+}
+
+// ─── Item parsing & receipt ───────────────────────────────────────────────────
+type ParsedItem = { qty: number; label: string; matched: PriceEntry | null };
+
+function parseItems(text: string): ParsedItem[] {
+  return text
+    .split(/,| and /i)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((segment) => {
+      const m = segment.match(/^(\d+)\s*x?\s*(.+)$/i);
+      const qty = m ? parseInt(m[1]!, 10) : 1;
+      const label = m ? m[2]!.trim() : segment;
+      const lower = label.toLowerCase();
+      const matched = PRICE_LIST.find((p) =>
+        p.keywords.some((k) => lower === k || lower.includes(k))
+      ) ?? null;
+      return { qty, label, matched };
+    });
+}
+
+function buildReceiptLines(items: ParsedItem[]): { lines: string[]; subtotal: number | null; allPriced: boolean } {
+  if (PRICE_LIST.length === 0 || items.length === 0) {
+    const lines = items.map((it) => `  ${it.qty}× ${it.label}`);
+    return { lines, subtotal: null, allPriced: false };
+  }
+  let subtotal = 0;
+  let allPriced = true;
+  const lines = items.map((it) => {
+    if (!it.matched) {
+      allPriced = false;
+      return `  ${it.qty}× ${it.label} — (price on pickup)`;
+    }
+    const lineTotal = it.qty * it.matched.price;
+    subtotal += lineTotal;
+    return `  ${it.qty}× ${it.matched.label} @ $${it.matched.price} = $${lineTotal}`;
+  });
+  return { lines, subtotal, allPriced };
 }
 
 function welcomeIntro(): string {
@@ -679,13 +720,28 @@ function buildConfirmationSms(order: {
   const addr = order.colonyAddress ? `${order.colonyAddress}, ` : "";
   const notesBlock = order.notes ? [``, `📝 Notes: ${order.notes}`] : [];
 
+  const parsed = parseItems(order.items ?? "");
+  const { lines, subtotal, allPriced } = buildReceiptLines(parsed);
+  const totalCount = parsed.reduce((sum, it) => sum + it.qty, 0);
+  const receiptBlock: string[] = [
+    `🧾 Receipt — ${order.orderNumber}`,
+    ...(lines.length > 0 ? lines : [`  (no items)`]),
+    `  ───────────`,
+  ];
+  if (subtotal !== null) {
+    receiptBlock.push(`  ${totalCount} item${totalCount !== 1 ? "s" : ""} • Subtotal: $${subtotal}`);
+    if (!allPriced) receiptBlock.push(`  (some items priced on pickup)`);
+  } else {
+    receiptBlock.push(`  ${totalCount} item${totalCount !== 1 ? "s" : ""} • Total confirmed on delivery`);
+  }
+
   return [
     `✅ Order Confirmed — ${order.orderNumber}`,
     ``,
     `📍 ${addr}${order.colony}, Unit ${order.unitNumber}`,
     `   ${order.town}`,
     ``,
-    `📦 Items: ${order.items ?? "(none)"}`,
+    ...receiptBlock,
     ...notesBlock,
     ``,
     `📅 Pickup: ${formatLongDate(order.pickupDate)}`,
