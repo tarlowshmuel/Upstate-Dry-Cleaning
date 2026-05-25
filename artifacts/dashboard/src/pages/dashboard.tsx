@@ -29,18 +29,9 @@ import {
 import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, Navigation, DollarSign, CircleDashed, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-function TicketsList({ text }: { text: string | null | undefined }) {
+function ItemsList({ text }: { text: string | null | undefined }) {
   if (!text || !text.trim()) return <span className="text-muted-foreground/40 text-sm">—</span>;
-  const tickets = text.split(/[,\s]+/).filter(Boolean);
-  return (
-    <div className="flex flex-wrap gap-1">
-      {tickets.map((t, i) => (
-        <span key={i} className="font-mono text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20">
-          {t}
-        </span>
-      ))}
-    </div>
-  );
+  return <span className="text-xs text-foreground">{text}</span>;
 }
 
 const DRIVER_START = "458 Riverside Drive, Fallsburg, NY";
@@ -339,7 +330,7 @@ export default function Dashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/60">
-                      {["ID", "Order", "Customer", "Location", "Tickets", "Access", "Status", "Paid", "Pickup"].map((h) => (
+                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Paid", "Pickup"].map((h) => (
                         <TableHead key={h} className="font-medium text-xs uppercase tracking-wider text-muted-foreground py-3">
                           {h}
                         </TableHead>
@@ -394,11 +385,11 @@ export default function Dashboard() {
                           </div>
                         </TableCell>
 
-                        {/* Cleaner tickets */}
+                        {/* Items */}
                         <TableCell className="py-4 max-w-[200px]">
                           <div className="flex items-start gap-1.5">
                             <Package className="w-3 h-3 text-primary/60 mt-0.5 shrink-0" />
-                            <TicketsList text={order.cleanerTickets} />
+                            <ItemsList text={order.items} />
                           </div>
                         </TableCell>
 
