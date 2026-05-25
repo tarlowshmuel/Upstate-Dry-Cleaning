@@ -166,12 +166,17 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState<
     "newest" | "oldest" | "pickup_soonest" | "pickup_latest" | "name"
   >("newest");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "picked_up" | "delivered" | "missed">("all");
+  const [paidFilter, setPaidFilter] = useState<"all" | "paid" | "unpaid">("all");
 
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
 
   const filteredOrders = (orders ?? [])
     .filter((o) => {
+      if (statusFilter !== "all" && o.status !== statusFilter) return false;
+      if (paidFilter === "paid" && !o.paid) return false;
+      if (paidFilter === "unpaid" && o.paid) return false;
       if (range === "all") return true;
       if (!o.pickupDate) return false;
       if (range === "today") return o.pickupDate === today;
@@ -285,6 +290,27 @@ export default function Dashboard() {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+                  <SelectTrigger className="h-8 w-[140px] text-xs border-border/60 bg-background">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">All statuses</SelectItem>
+                    {STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value} className="text-xs">{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={paidFilter} onValueChange={(v) => setPaidFilter(v as typeof paidFilter)}>
+                  <SelectTrigger className="h-8 w-[120px] text-xs border-border/60 bg-background">
+                    <SelectValue placeholder="Payment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">Paid &amp; Unpaid</SelectItem>
+                    <SelectItem value="paid" className="text-xs">Paid only</SelectItem>
+                    <SelectItem value="unpaid" className="text-xs">Unpaid only</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
                   <SelectTrigger className="h-8 w-[180px] text-xs border-border/60 bg-background">
                     <SelectValue placeholder="Sort by" />
