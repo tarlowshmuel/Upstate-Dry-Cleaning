@@ -174,10 +174,9 @@ function formatOrder(o: OrderRow): string {
   const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
   const notesLine = o.notes ? `\n📝 Notes: ${o.notes}` : "";
   const itemsLine = `\n📦 Items: ${o.items ?? "(not set)"}`;
-  const ticketsLine = `\n🎫 Tickets: ${o.cleanerTickets ?? "(not set)"}`;
   const pickup = o.pickupDate ? `Pickup: ${o.pickupDate}\n` : "";
   const paid = o.paid ? "PAID ✓" : "UNPAID";
-  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}${itemsLine}${ticketsLine}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
+  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}${itemsLine}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
 }
 
 // ─── Admin Menu System ─────────────────────────────────────────────────────────
@@ -216,8 +215,7 @@ function adminUpdateMenu(order: OrderRow): string {
     `3. Mark missed`,
     `4. Mark paid`,
     `5. Mark unpaid`,
-    `6. Set cleaner ticket #s`,
-    `7. Set items`,
+    `6. Set items`,
     ``,
     `0. Back to menu`,
   ].join("\n");
@@ -360,6 +358,26 @@ async function actionStats(range: "today" | "week" | "all"): Promise<string> {
   ].join("\n");
 }
 
+async function actionUpdateBrowse(): Promise<{ message: string; ids: string }> {
+  const recent = await db.select().from(ordersTable)
+    .where(sql`${ordersTable.status} <> 'delivered'`)
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(10);
+  if (recent.length === 0) {
+    return {
+      message: `✏️ UPDATE — no active orders.\n\nReply with a name, phone digits, or order # (DRY-…) to search older orders.\n\n0. Back to menu`,
+      ids: "",
+    };
+  }
+  const lines = recent.map((o, i) =>
+    `${i + 1}. ${o.orderNumber} — ${o.name} (${o.status}${o.paid ? ", paid" : ""})`
+  ).join("\n");
+  return {
+    message: `✏️ UPDATE — pick a recent order:\n\n${lines}\n\nOr reply with a name or order # (DRY-…) to search.\n\n0. Back to menu`,
+    ids: recent.map((o) => o.id).join(","),
+  };
+}
+
 async function actionLookup(id: number): Promise<string> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
   if (!order) return `No order found with ID ${id}.`;
@@ -378,22 +396,19 @@ async function searchOrders(rawQuery: string): Promise<OrderRow[]> {
         .where(eq(ordersTable.id, parseInt(q, 10))).limit(1);
       if (byId.length) return byId;
     }
-    // Match phone fragment OR cleaner-ticket fragment.
     const byDigits = await db.select().from(ordersTable)
-      .where(or(
-        sql`regexp_replace(${ordersTable.phoneNumber}, '\\D', '', 'g') LIKE ${'%' + q + '%'}`,
-        ilike(ordersTable.cleanerTickets, `%${q}%`),
-      ))
+      .where(sql`regexp_replace(${ordersTable.phoneNumber}, '\\D', '', 'g') LIKE ${'%' + q + '%'}`)
       .orderBy(desc(ordersTable.createdAt))
       .limit(20);
     return byDigits;
   }
 
-  // Text: case-insensitive name OR colony match.
+  // Text: case-insensitive name / colony / order-number match.
   return await db.select().from(ordersTable)
     .where(or(
       ilike(ordersTable.name, `%${q}%`),
       ilike(ordersTable.colony, `%${q}%`),
+      ilike(ordersTable.orderNumber, `%${q}%`),
     ))
     .orderBy(desc(ordersTable.createdAt))
     .limit(20);
@@ -513,8 +528,30 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
 
   const step = session?.step;
 
+  // ── Update browse: pick from recent list, or fall through to a search query
+  if (step === "admin_update_browse") {
+    const browseIds = (session?.items ?? "").split(",").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+    // If reply is a small number that maps to the shown list, pick from list.
+    if (/^\d+$/.test(text) && browseIds.length > 0) {
+      const pick = parseInt(text, 10);
+      if (pick >= 1 && pick <= browseIds.length) {
+        const id = browseIds[pick - 1]!;
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+        if (!order) {
+          await setAdminStep(from, "admin_main");
+          return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+        }
+        await setAdminStep(from, "admin_update_action", String(id));
+        return adminUpdateMenu(order);
+      }
+    }
+    // Otherwise treat as a search query.
+    await setAdminStep(from, "admin_update_search");
+    // Fall through into the search handler below by re-running it inline:
+  }
+
   // ── Lookup flow: collecting search query ───────────────────────────────────
-  if (step === "admin_lookup" || step === "admin_update_search") {
+  if (step === "admin_lookup" || step === "admin_update_search" || step === "admin_update_browse") {
     const nextFlow = step === "admin_lookup" ? "lookup" : "update";
     const matches = await searchOrders(raw);
     if (matches.length === 0) {
@@ -571,45 +608,19 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
         await setAdminStep(from, "admin_main");
         return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
       }
-      await setAdminStep(from, "admin_update_tickets", String(id));
-      const current = order.cleanerTickets ? `\n\nCurrent: ${order.cleanerTickets}` : "";
-      return `🎫 Enter cleaner ticket #s for order #${id} (${order.name}).\n\n` +
-             `One per item, comma-separated.\nExample: 4123, 4124, 4125\n\n` +
-             `Text "clear" to remove, or "0" to cancel.${current}`;
-    }
-    if (text === "7") {
-      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      if (!order) {
-        await setAdminStep(from, "admin_main");
-        return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
-      }
       await setAdminStep(from, "admin_update_items", String(id));
       const current = order.items ? `\n\nCurrent: ${order.items}` : "";
       return `📦 Enter items for order #${id} (${order.name}).\n\n` +
-             `List with quantities, comma-separated.\nExample: 2 suits, 3 dress shirts, 1 coat\n\n` +
+             `List with quantities, comma-separated.\nExamples:\n  • 1 bag of laundry\n  • 2 suits, 3 dress shirts, 1 coat\n\n` +
              `Text "clear" to remove, or "0" to cancel.${current}`;
     }
     if (!["1", "2", "3", "4", "5"].includes(text)) {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      return `Please reply 1-7, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
+      return `Please reply 1-6, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
     const result = await actionApplyUpdate(id, text);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
-  }
-
-  // ── Update flow: capturing cleaner ticket numbers ──────────────────────────
-  if (step === "admin_update_tickets") {
-    const id = parseInt(session?.items ?? "", 10);
-    if (isNaN(id)) {
-      await setAdminStep(from, "admin_main");
-      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
-    }
-    const value = text === "clear" || text === "none" ? null : raw;
-    await db.update(ordersTable).set({ cleanerTickets: value }).where(eq(ordersTable.id, id));
-    await setAdminStep(from, "admin_main");
-    const summary = value ? `Tickets set to: ${value}` : `Tickets cleared.`;
-    return `✅ Order #${id} — ${summary}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
   // ── Update flow: capturing items ───────────────────────────────────────────
@@ -667,11 +678,12 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     }
     case "7": {
       await setAdminStep(from, "admin_lookup");
-      return `🔍 Search for an order — reply with any of:\n  • Customer name (e.g. "Sarah")\n  • Phone digits (e.g. "9293450")\n  • Order ID (e.g. "5")\n  • Cleaner ticket # (e.g. "4123")\n\n0. Back to menu`;
+      return `🔍 Search for an order — reply with any of:\n  • Customer name (e.g. "Sarah")\n  • Phone digits (e.g. "9293450")\n  • Order ID (e.g. "5")\n  • Order # (e.g. "DRY-12345")\n\n0. Back to menu`;
     }
     case "8": {
-      await setAdminStep(from, "admin_update_search");
-      return `✏️ Find the order to update — reply with any of:\n  • Customer name\n  • Phone digits\n  • Order ID\n\n0. Back to menu`;
+      const { message, ids } = await actionUpdateBrowse();
+      await setAdminStep(from, "admin_update_browse", ids);
+      return message;
     }
     default:
       await setAdminStep(from, "admin_main");
