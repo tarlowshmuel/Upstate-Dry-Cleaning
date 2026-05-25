@@ -396,8 +396,8 @@ export default function Dashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/60">
-                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Paid", "Pickup"].map((h) => (
-                        <TableHead key={h} className="font-medium text-xs uppercase tracking-wider text-muted-foreground py-3">
+                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Paid", "Pickup"].map((h, i) => (
+                        <TableHead key={h} className={`font-medium text-xs uppercase tracking-wider text-muted-foreground py-3 ${i === 0 ? "pl-6" : ""}`}>
                           {h}
                         </TableHead>
                       ))}
@@ -410,7 +410,7 @@ export default function Dashboard() {
                         className={`transition-colors group border-b border-border/40 last:border-0 ${rowClass(order)}`}
                       >
                         {/* ID */}
-                        <TableCell className="py-4 w-[56px]">
+                        <TableCell className="py-4 pl-6 w-[72px]">
                           <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
                             <Hash className="w-3 h-3" />
                             {order.id}
