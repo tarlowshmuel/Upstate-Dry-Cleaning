@@ -270,7 +270,7 @@ export default function Dashboard() {
                   </span>
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Use the ID number with SMS commands — e.g. <span className="font-mono text-foreground">customer 5</span> or <span className="font-mono text-foreground">mark completed 5</span>
+                  ID numbers shown here are the same IDs used in the SMS admin menu (text <span className="font-mono text-foreground">menu</span> to your Twilio number).
                 </CardDescription>
               </div>
               <ToggleGroup
@@ -446,30 +446,37 @@ export default function Dashboard() {
         {/* SMS reference */}
         <Card className="border-border/50 shadow-sm bg-muted/20">
           <CardContent className="p-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Admin SMS Commands</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="flex items-baseline justify-between mb-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Admin SMS Menu</p>
+              <p className="text-xs text-muted-foreground">
+                Text <span className="font-mono text-foreground">menu</span> to your Twilio number — reply with numbers to navigate.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { cmd: "today pickups", desc: "Today's scheduled pickups" },
-                { cmd: "today returns", desc: "Orders at cleaners" },
-                { cmd: "pending", desc: "All pending orders" },
-                { cmd: "route", desc: "Today's route + Google Maps link" },
-                { cmd: "stats", desc: "All-time item totals" },
-                { cmd: "stats today", desc: "Items being picked up today" },
-                { cmd: "stats week", desc: "Items this past week" },
-                { cmd: "customer [id]", desc: "Order details" },
-                { cmd: "unpaid", desc: "List unpaid orders" },
-                { cmd: "mark completed [id]", desc: "Mark picked up" },
-                { cmd: "mark paid [id]", desc: "Mark paid" },
-                { cmd: "mark unpaid [id]", desc: "Mark unpaid" },
-                { cmd: "missed [id]", desc: "Mark missed" },
-                { cmd: "help", desc: "List commands" },
-              ].map(({ cmd, desc }) => (
-                <div key={cmd} className="flex flex-col gap-0.5">
-                  <span className="font-mono text-xs text-foreground font-medium">{cmd}</span>
-                  <span className="text-xs text-muted-foreground">{desc}</span>
+                { num: "1", label: "Today's pickups", desc: "Orders scheduled today" },
+                { num: "2", label: "Orders at cleaners", desc: "Picked up, awaiting return" },
+                { num: "3", label: "Pending orders", desc: "All not-yet-picked-up" },
+                { num: "4", label: "Unpaid orders", desc: "Owe money" },
+                { num: "5", label: "Route + Maps", desc: "Today's stops + Google Maps link" },
+                { num: "6", label: "Stats", desc: "Today / week / all-time totals" },
+                { num: "7", label: "Look up an order", desc: "Show details by ID" },
+                { num: "8", label: "Update an order", desc: "Picked up / delivered / paid / missed" },
+              ].map(({ num, label, desc }) => (
+                <div key={num} className="flex gap-2 items-start">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
+                    {num}
+                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-foreground font-semibold">{label}</span>
+                    <span className="text-xs text-muted-foreground">{desc}</span>
+                  </div>
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/40">
+              Reply <span className="font-mono text-foreground">0</span> or <span className="font-mono text-foreground">menu</span> at any time to return to the main menu.
+            </p>
           </CardContent>
         </Card>
       </div>

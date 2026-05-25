@@ -135,194 +135,309 @@ function formatOrder(o: OrderRow): string {
   return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}\n${pickup}Status: ${o.status} | ${paid}`;
 }
 
-// ─── Admin Commands ────────────────────────────────────────────────────────────
-async function handleAdminCommand(text: string): Promise<string> {
-  if (text === "help") {
-    return [
-      "COMMANDS:",
-      "today pickups",
-      "today returns",
-      "pending",
-      "unpaid",
-      "route",
-      "stats",
-      "stats today",
-      "stats week",
-      "customer [id]",
-      "mark completed [id]",
-      "mark paid [id]",
-      "mark unpaid [id]",
-      "missed [id]",
-    ].join("\n");
-  }
+// ─── Admin Menu System ─────────────────────────────────────────────────────────
+const ADMIN_MAIN_MENU = [
+  "🧺 ADMIN MENU",
+  "",
+  "1. Today's pickups",
+  "2. Orders at cleaners",
+  "3. Pending orders",
+  "4. Unpaid orders",
+  "5. Route + Maps link",
+  "6. Stats",
+  "7. Look up an order",
+  "8. Update an order",
+  "",
+  'Reply with a number (or "menu" anytime).',
+].join("\n");
 
-  // today pickups — orders scheduled for today's pickup
-  if (text === "today pickups") {
-    const today = toDateOnly(new Date());
-    const orders = await db
-      .select().from(ordersTable)
-      .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)))
-      .orderBy(ordersTable.town);
-    if (orders.length === 0) return "No pickups scheduled for today.";
-    return `TODAY'S PICKUPS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
-  }
+const ADMIN_STATS_MENU = [
+  "📊 STATS — pick a range:",
+  "",
+  "1. Today",
+  "2. This week",
+  "3. All time",
+  "",
+  "0. Back to menu",
+].join("\n");
 
-  if (text === "today returns") {
-    const orders = await db
-      .select().from(ordersTable)
-      .where(eq(ordersTable.status, "picked_up"))
-      .orderBy(ordersTable.town);
-    if (orders.length === 0) return "No returns scheduled.";
-    return `RETURNS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
-  }
-
-  if (text === "pending") {
-    const orders = await db
-      .select().from(ordersTable)
-      .where(eq(ordersTable.status, "pending"))
-      .orderBy(desc(ordersTable.createdAt));
-    if (orders.length === 0) return "No pending orders.";
-    return `PENDING (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
-  }
-
-  // route — today's pickups grouped by town + Google Maps URL
-  if (text === "route") {
-    const today = toDateOnly(new Date());
-    const orders = await db
-      .select().from(ordersTable)
-      .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)))
-      .orderBy(ordersTable.town);
-    if (orders.length === 0) return "No pickups for today's route.";
-
-    const byTown = new Map<string, OrderRow[]>();
-    for (const o of orders) {
-      if (!byTown.has(o.town)) byTown.set(o.town, []);
-      byTown.get(o.town)!.push(o);
-    }
-
-    let msg = `ROUTE — ${orders.length} stop${orders.length !== 1 ? "s" : ""}:\n`;
-    for (const [town, townOrders] of byTown) {
-      msg += `\n${town.toUpperCase()} (${townOrders.length}):\n`;
-      for (const o of townOrders) {
-        const gate = o.gateAccess ? ` [Gate: ${o.gateAccess}]` : "";
-        const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
-        msg += `  #${o.id} ${o.name} — ${addr}${o.colony}, Unit ${o.unitNumber}${gate}\n`;
-      }
-    }
-    msg += `\n📍 Open in Google Maps:\n${buildRouteUrl(orders)}`;
-    return msg.trim();
-  }
-
-  // stats — item totals
-  const statsMatch = text.match(/^stats(?: (today|week|all))?$/);
-  if (statsMatch) {
-    const range = statsMatch[1] ?? "all";
-    let whereClause;
-    let label = "ALL TIME";
-    if (range === "today") {
-      const today = toDateOnly(new Date());
-      whereClause = eq(ordersTable.pickupDate, today);
-      label = "TODAY";
-    } else if (range === "week") {
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
-      whereClause = gte(ordersTable.createdAt, weekAgo);
-      label = "THIS WEEK";
-    }
-
-    const orders = whereClause
-      ? await db.select().from(ordersTable).where(whereClause)
-      : await db.select().from(ordersTable);
-
-    if (orders.length === 0) return `No orders for ${label.toLowerCase()}.`;
-
-    // Aggregate items
-    const totals: Record<string, number> = {};
-    let totalItemCount = 0;
-    const statusCounts: Record<string, number> = {};
-    for (const o of orders) {
-      statusCounts[o.status] = (statusCounts[o.status] ?? 0) + 1;
-      const parsed = parseItemsText(o.items);
-      for (const [name, qty] of Object.entries(parsed)) {
-        totals[name] = (totals[name] ?? 0) + qty;
-        totalItemCount += qty;
-      }
-    }
-
-    const sortedItems = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-    const itemLines = sortedItems.map(([name, qty]) => `  ${qty}x ${name}`).join("\n");
-    const statusLines = Object.entries(statusCounts).map(([s, c]) => `  ${s}: ${c}`).join("\n");
-
-    return [
-      `📊 STATS — ${label}`,
-      ``,
-      `Orders: ${orders.length}`,
-      `Total items: ${totalItemCount}`,
-      ``,
-      `By status:`,
-      statusLines,
-      ``,
-      `Items breakdown:`,
-      itemLines || "  (no parseable items)",
-    ].join("\n");
-  }
-
-  const customerMatch = text.match(/^customer (\d+)$/);
-  if (customerMatch) {
-    const id = parseInt(customerMatch[1]!);
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-    if (!order) return `No order found with ID ${id}.`;
-    return formatOrder(order);
-  }
-
-  const completedMatch = text.match(/^mark completed (\d+)$/);
-  if (completedMatch) {
-    const id = parseInt(completedMatch[1]!);
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-    if (!order) return `Order #${id} not found.`;
-    await db.update(ordersTable).set({ status: "picked_up" }).where(eq(ordersTable.id, id));
-    return `Order #${id} (${order.name}) — marked picked up.`;
-  }
-
-  const paidMatch = text.match(/^mark paid (\d+)$/);
-  if (paidMatch) {
-    const id = parseInt(paidMatch[1]!);
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-    if (!order) return `Order #${id} not found.`;
-    await db.update(ordersTable).set({ paid: true }).where(eq(ordersTable.id, id));
-    return `Order #${id} (${order.name}) — marked PAID ✓`;
-  }
-
-  const unpaidMatch = text.match(/^mark unpaid (\d+)$/);
-  if (unpaidMatch) {
-    const id = parseInt(unpaidMatch[1]!);
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-    if (!order) return `Order #${id} not found.`;
-    await db.update(ordersTable).set({ paid: false }).where(eq(ordersTable.id, id));
-    return `Order #${id} (${order.name}) — marked UNPAID.`;
-  }
-
-  if (text === "unpaid") {
-    const orders = await db
-      .select().from(ordersTable)
-      .where(eq(ordersTable.paid, false))
-      .orderBy(desc(ordersTable.createdAt));
-    if (orders.length === 0) return "All orders are paid. 🎉";
-    return `UNPAID (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
-  }
-
-  const missedMatch = text.match(/^missed (\d+)$/);
-  if (missedMatch) {
-    const id = parseInt(missedMatch[1]!);
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-    if (!order) return `Order #${id} not found.`;
-    await db.update(ordersTable).set({ status: "missed" }).where(eq(ordersTable.id, id));
-    return `Order #${id} (${order.name}) — marked missed.`;
-  }
-
-  return `Unknown command. Text "help" for a list of commands.`;
+function adminUpdateMenu(order: OrderRow): string {
+  return [
+    `✏️ UPDATE Order #${order.id} — ${order.name}`,
+    `Status: ${order.status} | ${order.paid ? "PAID" : "UNPAID"}`,
+    ``,
+    `1. Mark picked up`,
+    `2. Mark delivered`,
+    `3. Mark missed`,
+    `4. Mark paid`,
+    `5. Mark unpaid`,
+    ``,
+    `0. Back to menu`,
+  ].join("\n");
 }
+
+async function setAdminStep(phone: string, step: string, scratch: string | null = null): Promise<void> {
+  await db
+    .insert(conversationsTable)
+    .values({ phoneNumber: phone, step, items: scratch })
+    .onConflictDoUpdate({
+      target: conversationsTable.phoneNumber,
+      set: { step, items: scratch, updatedAt: new Date() },
+    });
+}
+
+// ─── Admin Actions (data fetchers) ─────────────────────────────────────────────
+async function actionTodayPickups(): Promise<string> {
+  const today = toDateOnly(new Date());
+  const orders = await db
+    .select().from(ordersTable)
+    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)))
+    .orderBy(ordersTable.town);
+  if (orders.length === 0) return "No pickups scheduled for today.";
+  return `TODAY'S PICKUPS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+}
+
+async function actionTodayReturns(): Promise<string> {
+  const orders = await db
+    .select().from(ordersTable)
+    .where(eq(ordersTable.status, "picked_up"))
+    .orderBy(ordersTable.town);
+  if (orders.length === 0) return "No returns scheduled.";
+  return `RETURNS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+}
+
+async function actionPending(): Promise<string> {
+  const orders = await db
+    .select().from(ordersTable)
+    .where(eq(ordersTable.status, "pending"))
+    .orderBy(desc(ordersTable.createdAt));
+  if (orders.length === 0) return "No pending orders.";
+  return `PENDING (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+}
+
+async function actionUnpaid(): Promise<string> {
+  const orders = await db
+    .select().from(ordersTable)
+    .where(eq(ordersTable.paid, false))
+    .orderBy(desc(ordersTable.createdAt));
+  if (orders.length === 0) return "All orders are paid. 🎉";
+  return `UNPAID (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+}
+
+async function actionRoute(): Promise<string> {
+  const today = toDateOnly(new Date());
+  const orders = await db
+    .select().from(ordersTable)
+    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)))
+    .orderBy(ordersTable.town);
+  if (orders.length === 0) return "No pickups for today's route.";
+
+  const byTown = new Map<string, OrderRow[]>();
+  for (const o of orders) {
+    if (!byTown.has(o.town)) byTown.set(o.town, []);
+    byTown.get(o.town)!.push(o);
+  }
+
+  let msg = `ROUTE — ${orders.length} stop${orders.length !== 1 ? "s" : ""}:\n`;
+  for (const [town, townOrders] of byTown) {
+    msg += `\n${town.toUpperCase()} (${townOrders.length}):\n`;
+    for (const o of townOrders) {
+      const gate = o.gateAccess ? ` [Gate: ${o.gateAccess}]` : "";
+      const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
+      msg += `  #${o.id} ${o.name} — ${addr}${o.colony}, Unit ${o.unitNumber}${gate}\n`;
+    }
+  }
+  msg += `\n📍 Open in Google Maps:\n${buildRouteUrl(orders)}`;
+  return msg.trim();
+}
+
+async function actionStats(range: "today" | "week" | "all"): Promise<string> {
+  let whereClause;
+  let label = "ALL TIME";
+  if (range === "today") {
+    const today = toDateOnly(new Date());
+    whereClause = eq(ordersTable.pickupDate, today);
+    label = "TODAY";
+  } else if (range === "week") {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    weekAgo.setHours(0, 0, 0, 0);
+    whereClause = gte(ordersTable.createdAt, weekAgo);
+    label = "THIS WEEK";
+  }
+
+  const orders = whereClause
+    ? await db.select().from(ordersTable).where(whereClause)
+    : await db.select().from(ordersTable);
+
+  if (orders.length === 0) return `No orders for ${label.toLowerCase()}.`;
+
+  const totals: Record<string, number> = {};
+  let totalItemCount = 0;
+  const statusCounts: Record<string, number> = {};
+  for (const o of orders) {
+    statusCounts[o.status] = (statusCounts[o.status] ?? 0) + 1;
+    const parsed = parseItemsText(o.items);
+    for (const [name, qty] of Object.entries(parsed)) {
+      totals[name] = (totals[name] ?? 0) + qty;
+      totalItemCount += qty;
+    }
+  }
+
+  const sortedItems = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const itemLines = sortedItems.map(([name, qty]) => `  ${qty}x ${name}`).join("\n");
+  const statusLines = Object.entries(statusCounts).map(([s, c]) => `  ${s}: ${c}`).join("\n");
+
+  return [
+    `📊 STATS — ${label}`,
+    ``,
+    `Orders: ${orders.length}`,
+    `Total items: ${totalItemCount}`,
+    ``,
+    `By status:`,
+    statusLines,
+    ``,
+    `Items breakdown:`,
+    itemLines || "  (no parseable items)",
+  ].join("\n");
+}
+
+async function actionLookup(id: number): Promise<string> {
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+  if (!order) return `No order found with ID ${id}.`;
+  return formatOrder(order);
+}
+
+async function actionApplyUpdate(id: number, choice: string): Promise<string> {
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+  if (!order) return `Order #${id} not found.`;
+  switch (choice) {
+    case "1":
+      await db.update(ordersTable).set({ status: "picked_up" }).where(eq(ordersTable.id, id));
+      return `✅ Order #${id} (${order.name}) — marked picked up.`;
+    case "2":
+      await db.update(ordersTable).set({ status: "delivered" }).where(eq(ordersTable.id, id));
+      return `✅ Order #${id} (${order.name}) — marked delivered.`;
+    case "3":
+      await db.update(ordersTable).set({ status: "missed" }).where(eq(ordersTable.id, id));
+      return `✅ Order #${id} (${order.name}) — marked missed.`;
+    case "4":
+      await db.update(ordersTable).set({ paid: true }).where(eq(ordersTable.id, id));
+      return `✅ Order #${id} (${order.name}) — marked PAID.`;
+    case "5":
+      await db.update(ordersTable).set({ paid: false }).where(eq(ordersTable.id, id));
+      return `✅ Order #${id} (${order.name}) — marked UNPAID.`;
+    default:
+      return "Invalid choice.";
+  }
+}
+
+// ─── Admin Menu Handler ────────────────────────────────────────────────────────
+async function handleAdminCommand(from: string, text: string): Promise<string> {
+  // Universal "menu" / "back" / empty resets to main menu
+  if (text === "menu" || text === "back" || text === "0" || text === "help" || text === "") {
+    await setAdminStep(from, "admin_main");
+    return ADMIN_MAIN_MENU;
+  }
+
+  // Load admin session (if any)
+  const [session] = await db
+    .select().from(conversationsTable)
+    .where(eq(conversationsTable.phoneNumber, from))
+    .limit(1);
+
+  const step = session?.step;
+
+  // ── Update flow: collecting order ID ───────────────────────────────────────
+  if (step === "admin_update_id") {
+    if (!/^\d+$/.test(text)) return `Please enter a numeric order ID, or "0" to go back.`;
+    const id = parseInt(text, 10);
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+    if (!order) {
+      return `Order #${id} not found. Enter another ID, or "0" to go back.`;
+    }
+    await setAdminStep(from, "admin_update_action", String(id));
+    return adminUpdateMenu(order);
+  }
+
+  // ── Update flow: applying action ───────────────────────────────────────────
+  if (step === "admin_update_action") {
+    const id = parseInt(session?.items ?? "");
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that order. " + ADMIN_MAIN_MENU;
+    }
+    if (!["1", "2", "3", "4", "5"].includes(text)) {
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      return `Please reply 1-5, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
+    }
+    const result = await actionApplyUpdate(id, text);
+    await setAdminStep(from, "admin_main");
+    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Lookup flow: collecting order ID ───────────────────────────────────────
+  if (step === "admin_lookup") {
+    if (!/^\d+$/.test(text)) return `Please enter a numeric order ID, or "0" to go back.`;
+    const id = parseInt(text, 10);
+    const result = await actionLookup(id);
+    await setAdminStep(from, "admin_main");
+    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Stats submenu ──────────────────────────────────────────────────────────
+  if (step === "admin_stats") {
+    let range: "today" | "week" | "all" | null = null;
+    if (text === "1") range = "today";
+    else if (text === "2") range = "week";
+    else if (text === "3") range = "all";
+    else return `Please reply 1-3, or "0" to go back.\n\n${ADMIN_STATS_MENU}`;
+    const result = await actionStats(range);
+    await setAdminStep(from, "admin_main");
+    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Main menu (default) ────────────────────────────────────────────────────
+  // If no session or at main menu, treat input as menu choice
+  switch (text) {
+    case "1": {
+      await setAdminStep(from, "admin_main");
+      return `${await actionTodayPickups()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    case "2": {
+      await setAdminStep(from, "admin_main");
+      return `${await actionTodayReturns()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    case "3": {
+      await setAdminStep(from, "admin_main");
+      return `${await actionPending()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    case "4": {
+      await setAdminStep(from, "admin_main");
+      return `${await actionUnpaid()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    case "5": {
+      await setAdminStep(from, "admin_main");
+      return `${await actionRoute()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    case "6": {
+      await setAdminStep(from, "admin_stats");
+      return ADMIN_STATS_MENU;
+    }
+    case "7": {
+      await setAdminStep(from, "admin_lookup");
+      return `🔍 Enter the order ID to look up (just the number, e.g. "5"):\n\n0. Back to menu`;
+    }
+    case "8": {
+      await setAdminStep(from, "admin_update_id");
+      return `✏️ Enter the order ID to update:\n\n0. Back to menu`;
+    }
+    default:
+      await setAdminStep(from, "admin_main");
+      return `I didn't recognize that. Pick a number:\n\n${ADMIN_MAIN_MENU}`;
+  }
+}
+
 
 // ─── Confirmation SMS ─────────────────────────────────────────────────────────
 function buildConfirmationSms(order: {
@@ -371,7 +486,7 @@ router.post("/webhook/twilio", async (req, res) => {
   // ── Admin branch ─────────────────────────────────────────────────────────
   const adminPhone = process.env.ADMIN_PHONE_NUMBER;
   if (adminPhone && from === adminPhone) {
-    const reply = await handleAdminCommand(text);
+    const reply = await handleAdminCommand(from, text);
     res.send(twimlResponse(reply));
     return;
   }
