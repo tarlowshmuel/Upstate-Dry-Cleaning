@@ -214,21 +214,32 @@ const ADMIN_MAIN_MENU = [
   "8. Look up an order",
   "9. Update an order",
   "10. New order",
+  "11. Filtered list (uses current filters)",
   "",
-  'Tip: "sort newest|oldest|pickup|name" · "range today|week|all"',
+  'Sort: "sort newest|oldest|pickup|name"',
+  'Range: "range today|week|all"',
+  'Filter: "filter status pending|picked_up|delivered|missed|all"',
+  '        "filter paid yes|no|all"',
+  'Clear:  "reset"',
   'Reply with a number (or "menu" anytime).',
 ].join("\n");
 
-// ─── Admin preferences (sort / time range) ────────────────────────────────────
+// ─── Admin preferences (sort / time range / status / paid filter) ────────────
 // In-memory because admin is a single user; resets on restart, which is fine.
 type SortKey = "newest" | "oldest" | "pickup-asc" | "name";
 type RangeKey = "today" | "week" | "all";
-interface AdminPrefs { sort: SortKey; range: RangeKey }
+type StatusFilter = "all" | "pending" | "picked_up" | "delivered" | "missed";
+type PaidFilter = "all" | "paid" | "unpaid";
+interface AdminPrefs { sort: SortKey; range: RangeKey; status: StatusFilter; paid: PaidFilter }
 const adminPrefs = new Map<string, AdminPrefs>();
+const DEFAULT_PREFS: AdminPrefs = { sort: "newest", range: "all", status: "all", paid: "all" };
 function getPrefs(phone: string): AdminPrefs {
   let p = adminPrefs.get(phone);
-  if (!p) { p = { sort: "newest", range: "all" }; adminPrefs.set(phone, p); }
+  if (!p) { p = { ...DEFAULT_PREFS }; adminPrefs.set(phone, p); }
   return p;
+}
+function resetPrefs(phone: string): void {
+  adminPrefs.set(phone, { ...DEFAULT_PREFS });
 }
 function sortOrders(orders: OrderRow[], sort: SortKey): OrderRow[] {
   const arr = [...orders];
@@ -248,7 +259,26 @@ function rangeWhereClause(range: RangeKey) {
   return undefined;
 }
 function prefsBadge(p: AdminPrefs): string {
-  return `[sort=${p.sort} · range=${p.range}]`;
+  const parts = [`sort=${p.sort}`, `range=${p.range}`];
+  if (p.status !== "all") parts.push(`status=${p.status}`);
+  if (p.paid !== "all") parts.push(`paid=${p.paid}`);
+  return `[${parts.join(" · ")}]`;
+}
+
+// Generic listing that applies every active filter (status + paid + range + sort).
+async function actionFiltered(prefs: AdminPrefs): Promise<string> {
+  const whereParts = [];
+  if (prefs.status !== "all") whereParts.push(eq(ordersTable.status, prefs.status));
+  if (prefs.paid === "paid") whereParts.push(eq(ordersTable.paid, true));
+  if (prefs.paid === "unpaid") whereParts.push(eq(ordersTable.paid, false));
+  const rangeWhere = rangeWhereClause(prefs.range);
+  if (rangeWhere) whereParts.push(rangeWhere);
+  const orders = await db
+    .select().from(ordersTable)
+    .where(whereParts.length === 0 ? undefined : whereParts.length === 1 ? whereParts[0] : and(...whereParts));
+  if (orders.length === 0) return `No orders match the current filters ${prefsBadge(prefs)}.`;
+  const sorted = sortOrders(orders, prefs.sort);
+  return `FILTERED LIST (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
 }
 
 const ADMIN_STATS_MENU = [
@@ -694,6 +724,25 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     await setAdminStep(from, "admin_main");
     return `✅ Range set to ${rangeMatch[1]}.\n\n${ADMIN_MAIN_MENU}`;
   }
+  const statusFilterMatch = text.match(/^filter\s+status\s+(pending|picked_up|delivered|missed|all)$/);
+  if (statusFilterMatch) {
+    getPrefs(from).status = statusFilterMatch[1] as StatusFilter;
+    await setAdminStep(from, "admin_main");
+    return `✅ Status filter: ${statusFilterMatch[1]}.\n\n${ADMIN_MAIN_MENU}`;
+  }
+  const paidFilterMatch = text.match(/^filter\s+paid\s+(yes|no|paid|unpaid|all)$/);
+  if (paidFilterMatch) {
+    const v = paidFilterMatch[1]!;
+    const mapped: PaidFilter = v === "yes" || v === "paid" ? "paid" : v === "no" || v === "unpaid" ? "unpaid" : "all";
+    getPrefs(from).paid = mapped;
+    await setAdminStep(from, "admin_main");
+    return `✅ Payment filter: ${mapped}.\n\n${ADMIN_MAIN_MENU}`;
+  }
+  if (text === "reset" || text === "reset filters" || text === "clear filters") {
+    resetPrefs(from);
+    await setAdminStep(from, "admin_main");
+    return `✅ Filters reset to defaults.\n\n${ADMIN_MAIN_MENU}`;
+  }
 
   // Load admin session (if any)
   const [session] = await db
@@ -1126,6 +1175,10 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       const { message, ids } = await actionUpdateBrowse();
       await setAdminStep(from, "admin_update_browse", ids);
       return message;
+    }
+    case "11": {
+      await setAdminStep(from, "admin_main");
+      return `${await actionFiltered(prefs)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
     case "10": {
       await setAdminStep(from, "admin_new_phone", writeScratch({}));
