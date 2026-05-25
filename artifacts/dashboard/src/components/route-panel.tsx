@@ -1,9 +1,11 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navigation, MapPin, Phone, Key, Package, AlertTriangle, Route as RouteIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
 
@@ -53,8 +55,6 @@ interface UnitGroup {
 }
 
 function groupByUnit(orders: StopOrder[]): UnitGroup[] {
-  // Group by unit + phone so multi-contact units (rare, but possible) aren't
-  // collapsed into a single dispatcher contact.
   const map = new Map<string, UnitGroup>();
   for (const o of orders) {
     const key = `${o.unitNumber.trim().toLowerCase()}|${o.phoneNumber.trim()}`;
@@ -84,27 +84,116 @@ function groupByUnit(orders: StopOrder[]): UnitGroup[] {
   });
 }
 
-async function fetchRoute(): Promise<RouteResponse> {
-  const res = await fetch(`${API_BASE}/route/today`, { credentials: "include" });
+function toDateOnly(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+interface DayOption {
+  date: string;
+  label: string;
+  sub: string;
+  isToday: boolean;
+}
+
+function buildDayOptions(): DayOption[] {
+  const days: DayOption[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dow = d.getDay();
+    days.push({
+      date: toDateOnly(d),
+      label: weekdays[dow]!,
+      sub: `${d.getMonth() + 1}/${d.getDate()}`,
+      isToday: i === 0,
+    });
+  }
+  return days;
+}
+
+async function fetchRoute(date: string): Promise<RouteResponse> {
+  const res = await fetch(`${API_BASE}/route/today?date=${encodeURIComponent(date)}`, {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error("Failed to fetch route");
   return res.json();
 }
 
 export function RoutePanel() {
+  const dayOptions = useMemo(buildDayOptions, []);
+  const [selectedDate, setSelectedDate] = useState<string>(dayOptions[0]!.date);
+  const selectedOption = dayOptions.find((d) => d.date === selectedDate) ?? dayOptions[0]!;
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["route", "today"],
-    queryFn: fetchRoute,
+    queryKey: ["route", selectedDate],
+    queryFn: () => fetchRoute(selectedDate),
     staleTime: 60_000,
   });
+
+  const headerTitle = selectedOption.isToday
+    ? "Today's Optimized Route"
+    : `${selectedOption.label}'s Optimized Route`;
+
+  const daySelector = (
+    <div className="flex flex-wrap gap-1.5">
+      {dayOptions.map((d) => {
+        const active = d.date === selectedDate;
+        return (
+          <button
+            key={d.date}
+            type="button"
+            onClick={() => setSelectedDate(d.date)}
+            className={cn(
+              "px-2.5 py-1.5 rounded-md border text-xs font-medium leading-tight flex flex-col items-center min-w-12 transition-colors",
+              active
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card hover:bg-muted border-border text-foreground",
+            )}
+          >
+            <span>{d.label}</span>
+            <span className={cn("text-[10px]", active ? "opacity-90" : "text-muted-foreground")}>
+              {d.sub}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const headerBlock = (
+    <CardHeader>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
+              <RouteIcon className="w-4 h-4" /> {headerTitle}
+            </CardTitle>
+            <CardDescription className="mt-1">{selectedOption.label}, {selectedDate}</CardDescription>
+          </div>
+          {data && data.stops.length > 0 && (
+            <Button asChild size="sm" className="gap-2">
+              <a href={data.mapsUrl} target="_blank" rel="noopener noreferrer">
+                <Navigation className="w-4 h-4" />
+                Open in Google Maps
+              </a>
+            </Button>
+          )}
+        </div>
+        {daySelector}
+      </div>
+    </CardHeader>
+  );
 
   if (isLoading) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
-            <RouteIcon className="w-4 h-4" /> Today's Optimized Route
-          </CardTitle>
-        </CardHeader>
+        {headerBlock}
         <CardContent>
           <Skeleton className="h-24 w-full" />
         </CardContent>
@@ -115,14 +204,8 @@ export function RoutePanel() {
   if (isError || !data) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
-            <RouteIcon className="w-4 h-4" /> Today's Optimized Route
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Could not load route.
-        </CardContent>
+        {headerBlock}
+        <CardContent className="text-sm text-muted-foreground">Could not load route.</CardContent>
       </Card>
     );
   }
@@ -130,14 +213,9 @@ export function RoutePanel() {
   if (data.stops.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
-            <RouteIcon className="w-4 h-4" /> Today's Optimized Route
-          </CardTitle>
-          <CardDescription>{data.date}</CardDescription>
-        </CardHeader>
+        {headerBlock}
         <CardContent className="text-sm text-muted-foreground">
-          No pickups scheduled for today.
+          No pickups scheduled for {selectedOption.isToday ? "today" : selectedOption.label}.
         </CardContent>
       </Card>
     );
@@ -147,29 +225,15 @@ export function RoutePanel() {
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-          <div>
-            <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
-              <RouteIcon className="w-4 h-4" /> Today's Optimized Route
-            </CardTitle>
-            <CardDescription className="mt-1 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{data.stops.length} stop{data.stops.length !== 1 ? "s" : ""}</Badge>
-              <Badge variant="secondary">{totalOrders} order{totalOrders !== 1 ? "s" : ""}</Badge>
-              {data.totalDistanceMiles > 0 && (
-                <Badge variant="secondary">~{data.totalDistanceMiles} mi</Badge>
-              )}
-            </CardDescription>
-          </div>
-          <Button asChild size="sm" className="gap-2">
-            <a href={data.mapsUrl} target="_blank" rel="noopener noreferrer">
-              <Navigation className="w-4 h-4" />
-              Open in Google Maps
-            </a>
-          </Button>
-        </div>
-      </CardHeader>
+      {headerBlock}
       <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{data.stops.length} stop{data.stops.length !== 1 ? "s" : ""}</Badge>
+          <Badge variant="secondary">{totalOrders} order{totalOrders !== 1 ? "s" : ""}</Badge>
+          {data.totalDistanceMiles > 0 && (
+            <Badge variant="secondary">~{data.totalDistanceMiles} mi</Badge>
+          )}
+        </div>
         {data.warnings.length > 0 && (
           <div className="flex items-start gap-2 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-sm">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />

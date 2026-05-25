@@ -14,7 +14,8 @@ function toDateOnly(d: Date): string {
 }
 
 router.get("/route/today", async (req, res) => {
-  const date = toDateOnly(new Date());
+  const requested = typeof req.query.date === "string" ? req.query.date.trim() : "";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : toDateOnly(new Date());
   try {
     const orders = await db
       .select()
