@@ -4,7 +4,8 @@ import { haversineKm, optimizeRoute, type Point } from "./route-optimizer";
 
 const DRIVER_START =
   process.env["DRIVER_START_ADDRESS"] ?? "458 Riverside Drive, Fallsburg, NY";
-const DRIVER_END = process.env["DRY_CLEANERS_ADDRESS"] ?? DRIVER_START;
+const DRIVER_END =
+  process.env["DRY_CLEANERS_ADDRESS"] ?? "16 Thompson Square, Monticello, NY 12701";
 
 export interface OptimizedStop {
   town: string;

@@ -128,6 +128,18 @@ export async function geocodeColony(
 
 const addressGeoCache = new Map<string, LatLng | null>();
 
+// Hand-curated overrides for landmarks that Nominatim/OSM either doesn't have
+// or returns the wrong location for. Keyed by the canonical address string.
+// Coordinates verified against the plaza area in Kiamesha Lake (Home Depot /
+// ShopRite / Thompson Square Mall sit on the same lot off Concord Rd).
+const ADDRESS_OVERRIDES: Record<string, LatLng> = {
+  "16 Thompson Square, Monticello, NY 12701": {
+    lat: 41.6683,
+    lng: -74.6699,
+    displayLabel: "Thompson Square Mall, Monticello, NY",
+  },
+};
+
 /**
  * Geocode a single free-form address. Cached in-process for the lifetime of
  * the server — used primarily for the driver start/end addresses which never
@@ -135,6 +147,11 @@ const addressGeoCache = new Map<string, LatLng | null>();
  */
 export async function geocodeAddress(address: string): Promise<LatLng | null> {
   if (addressGeoCache.has(address)) return addressGeoCache.get(address)!;
+  const override = ADDRESS_OVERRIDES[address];
+  if (override) {
+    addressGeoCache.set(address, override);
+    return override;
+  }
   const hit = await nominatim(address);
   addressGeoCache.set(address, hit);
   return hit;

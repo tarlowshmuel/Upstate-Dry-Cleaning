@@ -72,7 +72,8 @@ const DAY_NUM: Record<string, number> = {
 };
 
 const DRIVER_START = process.env.DRIVER_START_ADDRESS ?? "458 Riverside Drive, Fallsburg, NY";
-const DRIVER_END = process.env.DRY_CLEANERS_ADDRESS ?? DRIVER_START;
+const DRIVER_END =
+  process.env.DRY_CLEANERS_ADDRESS ?? "16 Thompson Square, Monticello, NY 12701";
 
 const PAYMENT_PHONE = "(929) 345-0940";
 const PUBLIC_URL = process.env.PUBLIC_URL ?? "https://twilio-connect-shmueltarlow.replit.app";
