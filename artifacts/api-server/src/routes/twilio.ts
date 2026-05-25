@@ -11,29 +11,38 @@ const router = Router();
 // Corridor-based split: Monday handles the Rt 42 south corridor (tight cluster
 // around Fallsburg), Tuesday handles the Rt 17 west / Liberty corridor.
 // Drop-off is always pickup + 2 days.
-const TOWN_SCHEDULE: Record<string, { pickup: string; dropoff: string }> = {
-  // ── Monday: Rt 42 / Rt 52 corridor (eastern Sullivan + Greenfield Park) ──
-  "Fallsburg":        { pickup: "Monday",  dropoff: "Wednesday" },
-  "South Fallsburg":  { pickup: "Monday",  dropoff: "Wednesday" },
-  "Woodbourne":       { pickup: "Monday",  dropoff: "Wednesday" },
-  "Greenfield Park":  { pickup: "Monday",  dropoff: "Wednesday" },
-  "Loch Sheldrake":   { pickup: "Monday",  dropoff: "Wednesday" },
-  "Hurleyville":      { pickup: "Monday",  dropoff: "Wednesday" },
-  "Woodridge":        { pickup: "Monday",  dropoff: "Wednesday" },
-  "Mountaindale":     { pickup: "Monday",  dropoff: "Wednesday" },
-  "Dairyland":        { pickup: "Monday",  dropoff: "Wednesday" },
-  "Glen Wild":        { pickup: "Monday",  dropoff: "Wednesday" },
-  // ── Tuesday: Rt 17 west / Liberty corridor + Rock Hill ──────────────────
-  "Rock Hill":        { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Monticello":       { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Kiamesha Lake":    { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Ferndale":         { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Liberty":          { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Parksville":       { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Livingston Manor": { pickup: "Tuesday", dropoff: "Thursday"  },
+// Phase 1 = currently servicing. Phase 2 = on the roadmap, not bookable yet.
+// When a Phase 2 town gets picked, the customer flow politely declines and the
+// admin booking flows hide it. Flip `phase: 2 -> 1` here to launch a town —
+// nothing else needs to change.
+type TownSchedule = { pickup: string; dropoff: string; phase: 1 | 2 };
+const TOWN_SCHEDULE: Record<string, TownSchedule> = {
+  // ── Phase 1 · Monday: Rt 42 / Rt 52 corridor (eastern Sullivan) ──────────
+  "Fallsburg":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "South Fallsburg":  { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Woodbourne":       { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Greenfield Park":  { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Loch Sheldrake":   { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Hurleyville":      { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Woodridge":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Mountaindale":     { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Dairyland":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  "Glen Wild":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
+  // ── Phase 2 · Rt 17 west / Liberty corridor — coming soon, not bookable ──
+  "Rock Hill":        { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
+  "Monticello":       { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
+  "Kiamesha Lake":    { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
+  "Ferndale":         { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
+  "Liberty":          { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
+  "Parksville":       { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
+  "Livingston Manor": { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
 };
 
 const TOWNS = Object.keys(TOWN_SCHEDULE);
+const PHASE_1_TOWNS = TOWNS.filter((t) => TOWN_SCHEDULE[t]!.phase === 1);
+function isPhase1(town: string): boolean {
+  return TOWN_SCHEDULE[town]?.phase === 1;
+}
 
 // Driving order within each corridor — kept here so the route view can sort
 // stops in the order the driver actually visits them.
@@ -157,16 +166,31 @@ function formatLongDate(d: Date): string {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
-function townList(): string {
-  return TOWNS.map((t, i) => `${i + 1}. ${t}`).join("\n");
+// Customer-facing town picker. Shows Phase 1 (bookable) towns numbered, then
+// a "Coming soon" footer listing Phase 2 towns so customers in those areas
+// see we're expanding to them. The numbers only map to Phase 1 — picking a
+// Phase 2 name isn't a valid selection (the flow rejects by number range).
+function customerTownList(): string {
+  const numbered = PHASE_1_TOWNS.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  const phase2 = TOWNS.filter((t) => !isPhase1(t));
+  if (phase2.length === 0) return numbered;
+  return `${numbered}\n\n🚧 Coming soon: ${phase2.join(", ")}`;
+}
+
+// Admin booking pickers — only show Phase 1 since admins can't book unserviced
+// areas either. Numbers stay aligned with PHASE_1_TOWNS indexing.
+function adminTownList(): string {
+  return PHASE_1_TOWNS.map((t, i) => `${i + 1}. ${t}`).join("\n");
 }
 
 // Public read-only endpoint so the dashboard can show the towns + auto-fill
-// pickup date when the admin picks a town in the New Order dialog.
+// pickup date when the admin picks a town in the New Order dialog. Only
+// Phase 1 (currently servicing) towns are returned — Phase 2 is intentionally
+// hidden from the dashboard booking UI.
 router.get("/towns", (_req, res) => {
   const now = new Date();
   res.json(
-    TOWNS.map((name) => {
+    PHASE_1_TOWNS.map((name) => {
       const sched = TOWN_SCHEDULE[name]!;
       const next = nextPickupDate(name, now);
       return {
@@ -969,7 +993,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       "9": {
         step: "admin_edit_addr_town",
         prompt: (o) =>
-          `🏘️ New town for #${o.id}?\n\nCurrent: ${o.town}\n\n${townList()}\n\n"0" to cancel.`,
+          `🏘️ New town for #${o.id}?\n\nCurrent: ${o.town}\n\n${adminTownList()}\n\n"0" to cancel.`,
       },
       "10": {
         step: "admin_edit_pickup",
@@ -1078,10 +1102,10 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     // the town step.
     if (step === "admin_edit_addr_town") {
       const n = parseInt(text, 10);
-      if (isNaN(n) || n < 1 || n > TOWNS.length) {
-        return `Reply 1-${TOWNS.length}, or "0" to cancel.\n\n${townList()}`;
+      if (isNaN(n) || n < 1 || n > PHASE_1_TOWNS.length) {
+        return `Reply 1-${PHASE_1_TOWNS.length}, or "0" to cancel.\n\n${adminTownList()}`;
       }
-      const town = TOWNS[n - 1]!;
+      const town = PHASE_1_TOWNS[n - 1]!;
       await setAdminStep(from, "admin_edit_addr_colony", JSON.stringify({ id, town }));
       return `🏠 Colony / building / development name?\n\n"0" to cancel.`;
     }
@@ -1199,14 +1223,14 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     if (step === "admin_new_name") {
       scratch.name = raw;
       await setAdminStep(from, "admin_new_town", writeScratch(scratch));
-      return `🏘️ Which town?\n\n${townList()}`;
+      return `🏘️ Which town?\n\n${adminTownList()}`;
     }
     if (step === "admin_new_town") {
       const n = parseInt(text, 10);
-      if (isNaN(n) || n < 1 || n > TOWNS.length) {
-        return `Reply 1-${TOWNS.length}.\n\n${townList()}`;
+      if (isNaN(n) || n < 1 || n > PHASE_1_TOWNS.length) {
+        return `Reply 1-${PHASE_1_TOWNS.length}.\n\n${adminTownList()}`;
       }
-      scratch.town = TOWNS[n - 1]!;
+      scratch.town = PHASE_1_TOWNS[n - 1]!;
       await setAdminStep(from, "admin_new_colony", writeScratch(scratch));
       return `🏢 Colony / neighborhood name?`;
     }
@@ -1467,6 +1491,33 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
       .orderBy(desc(ordersTable.id))
       .limit(1);
 
+    // Returning customer whose saved town is now Phase 2 (or was never serviced):
+    // don't offer the "use saved address" shortcut — it would bypass the town
+    // picker and let them book a non-serviced area. Fall through to the fresh
+    // flow with a kind heads-up.
+    if (lastOrder && !isPhase1(lastOrder.town)) {
+      await db
+        .insert(conversationsTable)
+        .values({ phoneNumber: from, step: "name" })
+        .onConflictDoUpdate({
+          target: conversationsTable.phoneNumber,
+          set: {
+            step: "name",
+            name: null, town: null, colony: null, colonyAddress: null,
+            unitNumber: null, gateAccess: null, items: null,
+            updatedAt: new Date(),
+          },
+        });
+      const firstName = lastOrder.name.split(" ")[0] ?? lastOrder.name;
+      res.send(twimlResponse(
+        `Welcome back, ${firstName}! 👋\n\n` +
+        `Heads up — we don't service ${lastOrder.town} yet, but it's on our roadmap and we'll text you the moment we launch there. ` +
+        `In the meantime, if you'd like to book a pickup at a different address in our current service area:\n\n` +
+        `What is your full name?`
+      ));
+      return;
+    }
+
     if (lastOrder) {
       await db
         .insert(conversationsTable)
@@ -1684,17 +1735,29 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
     await db.update(conversationsTable)
       .set({ name: raw, step: "town", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
-    res.send(twimlResponse(`Thanks, ${raw}! Which town are you in?\n\nReply with the number:\n\n${townList()}`));
+    res.send(twimlResponse(`Thanks, ${raw}! Which town are you in?\n\nReply with the number:\n\n${customerTownList()}`));
     return;
   }
 
   if (step === "town") {
-    const num = parseInt(text);
-    if (isNaN(num) || num < 1 || num > TOWNS.length) {
-      res.send(twimlResponse(`Please reply with a number between 1 and ${TOWNS.length}.\n\n${townList()}`));
+    // Phase 2 town typed by name (e.g. "Monticello") — kindly decline and
+    // wipe conversation so they can text again once we launch their area.
+    const typedTown = TOWNS.find((t) => t.toLowerCase() === text.toLowerCase());
+    if (typedTown && !isPhase1(typedTown)) {
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Sorry, we don't service ${typedTown} yet — but it's on our roadmap! ` +
+        `We'll text you the moment we launch in your area. ` +
+        `In the meantime, tell your neighbors in our service area to text "clean" to (845) 606-0022. 🚀`
+      ));
       return;
     }
-    const selectedTown = TOWNS[num - 1]!;
+    const num = parseInt(text);
+    if (isNaN(num) || num < 1 || num > PHASE_1_TOWNS.length) {
+      res.send(twimlResponse(`Please reply with a number between 1 and ${PHASE_1_TOWNS.length}.\n\n${customerTownList()}`));
+      return;
+    }
+    const selectedTown = PHASE_1_TOWNS[num - 1]!;
     await db.update(conversationsTable)
       .set({ town: selectedTown, step: "colony", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
@@ -1747,7 +1810,18 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
 
   if (step === "notes") {
     const notes = text === "skip" || text === "none" || text === "no" ? null : raw;
-    const pickupDate = nextPickupDate(convo.town!);
+    // Hard Phase-1 gate at the final commit. Catches stale conversations
+    // (e.g. one started before a town was demoted from Phase 1 → Phase 2)
+    // before they turn into orders the driver can't fulfill.
+    if (!convo.town || !isPhase1(convo.town)) {
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Sorry, we don't service ${convo.town ?? "that area"} yet — it's on our roadmap and we'll text you when we launch. ` +
+        `Please text "clean" to start over with a different address.`
+      ));
+      return;
+    }
+    const pickupDate = nextPickupDate(convo.town);
     if (!pickupDate) {
       await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
       res.send(twimlResponse(`Sorry, we don't service ${convo.town} yet. Please text "clean" to start over.`));
