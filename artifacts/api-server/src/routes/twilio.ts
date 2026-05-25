@@ -276,34 +276,28 @@ async function actionRoute(): Promise<string> {
     .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)));
   if (orders.length === 0) return "No pickups for today's route.";
 
-  // Sort by driving order: town route index, then colony (keeps same-complex stops together), then address.
-  const sorted = [...orders].sort((a, b) => {
-    const ta = townRouteIndex(a.town);
-    const tb = townRouteIndex(b.town);
-    if (ta !== tb) return ta - tb;
-    const ca = (a.colony ?? "").localeCompare(b.colony ?? "");
-    if (ca !== 0) return ca;
-    return (a.colonyAddress ?? "").localeCompare(b.colonyAddress ?? "");
-  });
+  const { computeOptimizedRoute } = await import("../lib/route-service");
+  const route = await computeOptimizedRoute(orders);
 
-  let msg = `🚚 ROUTE — ${sorted.length} stop${sorted.length !== 1 ? "s" : ""}\n`;
-  msg += `Start: ${DRIVER_START}\n`;
-  let currentTown = "";
-  sorted.forEach((o, i) => {
-    if (o.town !== currentTown) {
-      currentTown = o.town;
-      msg += `\n— ${currentTown.toUpperCase()} —\n`;
-    }
-    const addr = o.colonyAddress ?? "";
-    const gate = o.gateAccess ? `   Gate: ${o.gateAccess}\n` : "";
-    msg += `\n${i + 1}. ${o.name}\n`;
-    if (addr) msg += `   ${addr}\n`;
-    msg += `   ${o.colony}, Unit ${o.unitNumber}\n`;
-    msg += `   ${o.town}, NY\n`;
-    msg += gate;
-    msg += `   📞 ${o.phoneNumber}\n`;
+  let msg = `🚚 OPTIMIZED ROUTE — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
+  if (route.totalDistanceMiles > 0) {
+    msg += ` · ~${route.totalDistanceMiles} mi`;
+  }
+  msg += `\nStart: ${DRIVER_START}\n`;
+
+  route.stops.forEach((s, i) => {
+    const ordersHere = orders.filter((o) => s.orderIds.includes(o.id));
+    msg += `\n${i + 1}. ${s.colony}${s.addressHint ? ` (${s.addressHint})` : ""}, ${s.town}\n`;
+    ordersHere.forEach((o) => {
+      const gate = o.gateAccess ? ` · Gate ${o.gateAccess}` : "";
+      msg += `   • Unit ${o.unitNumber} — ${o.name}${gate}\n`;
+      msg += `     📞 ${o.phoneNumber}\n`;
+    });
   });
   msg += `\nEnd: ${DRIVER_END}`;
+  if (route.warnings.length > 0) {
+    msg += `\n\n⚠️ ${route.warnings.join("; ")}`;
+  }
   return msg;
 }
 

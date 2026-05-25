@@ -26,24 +26,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, Navigation, DollarSign, CircleDashed, CheckCircle2 } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RoutePanel } from "@/components/route-panel";
 
 function ItemsList({ text }: { text: string | null | undefined }) {
   if (!text || !text.trim()) return <span className="text-muted-foreground/40 text-sm">—</span>;
   return <span className="text-xs text-foreground">{text}</span>;
-}
-
-const DRIVER_START = "458 Riverside Drive, Fallsburg, NY";
-
-function buildRouteUrl(orders: Array<{ colonyAddress?: string | null; colony: string; town: string }>): string {
-  const waypoints = orders
-    .map((o) => [o.colonyAddress, o.colony, o.town, "NY"].filter(Boolean).join(", "))
-    .map(encodeURIComponent)
-    .join("|");
-  const origin = encodeURIComponent(DRIVER_START);
-  const destination = encodeURIComponent(DRIVER_START);
-  return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
 }
 
 function todayDateString(): string {
@@ -175,7 +164,6 @@ export default function Dashboard() {
 
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
-  const routeUrl = todaysPickups.length > 0 ? buildRouteUrl(todaysPickups) : null;
 
   const filteredOrders = (orders ?? []).filter((o) => {
     if (range === "all") return true;
@@ -217,18 +205,6 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {routeUrl && (
-              <Button
-                asChild
-                size="sm"
-                className="gap-2"
-              >
-                <a href={routeUrl} target="_blank" rel="noopener noreferrer">
-                  <Navigation className="w-4 h-4" />
-                  Today's Route ({todaysPickups.length})
-                </a>
-              </Button>
-            )}
             <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/60 border border-border/50 px-3 py-2 rounded-md font-mono">
               <Phone className="w-3.5 h-3.5 text-primary" />
               Text <span className="text-foreground font-semibold mx-1">"clean"</span> to your Twilio number
@@ -268,6 +244,9 @@ export default function Dashboard() {
             ))}
           </div>
         )}
+
+        {/* Optimized route */}
+        <RoutePanel />
 
         {/* Orders table */}
         <Card className="border-border/60 shadow-sm overflow-hidden">
