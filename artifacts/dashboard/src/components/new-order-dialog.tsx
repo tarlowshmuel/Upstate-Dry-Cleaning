@@ -83,7 +83,7 @@ export function NewOrderDialog() {
           phoneNumber: form.phoneNumber.trim(),
           town: form.town.trim(),
           colony: form.colony.trim(),
-          colonyAddress: form.colonyAddress.trim() || null,
+          colonyAddress: form.colonyAddress.trim(),
           unitNumber: form.unitNumber.trim(),
           gateAccess: form.gateAccess.trim() || null,
           items: form.items.trim() || null,
@@ -103,7 +103,8 @@ export function NewOrderDialog() {
     }
   }
 
-  const required = form.name && form.phoneNumber && form.town && form.colony && form.unitNumber;
+  const required =
+    form.name && form.phoneNumber && form.town && form.colony && form.unitNumber && form.colonyAddress;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -200,12 +201,13 @@ export function NewOrderDialog() {
             </div>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="no-addr">Colony address (optional)</Label>
+            <Label htmlFor="no-addr">Colony address *</Label>
             <Input
               id="no-addr"
               placeholder="e.g. 458 Riverside Dr"
               value={form.colonyAddress}
               onChange={(e) => update("colonyAddress", e.target.value)}
+              required
             />
           </div>
           <div className="space-y-1">
