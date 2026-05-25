@@ -2,10 +2,26 @@ import type { Order } from "@workspace/db/schema";
 import { geocodeAddress, geocodeColony } from "./geocode";
 import { haversineKm, optimizeRoute, type Point } from "./route-optimizer";
 
-const DRIVER_START =
+const DRIVER_HOME =
   process.env["DRIVER_START_ADDRESS"] ?? "458 Riverside Drive, Fallsburg, NY";
-const DRIVER_END =
+const DRY_CLEANERS =
   process.env["DRY_CLEANERS_ADDRESS"] ?? "16 Thompson Square, Monticello, NY 12701";
+
+// Backwards-compatible aliases (pickup-direction defaults).
+const DRIVER_START = DRIVER_HOME;
+const DRIVER_END = DRY_CLEANERS;
+
+export type RouteDirection = "pickup" | "delivery";
+
+/** Origin/destination for a route, given a direction.
+ *  pickup:   home → customers → cleaners (drop bags off to be cleaned)
+ *  delivery: cleaners → customers → home (drop clean bags back to customers)
+ */
+export function endpointsFor(direction: RouteDirection): { startAddr: string; endAddr: string } {
+  return direction === "delivery"
+    ? { startAddr: DRY_CLEANERS, endAddr: DRIVER_HOME }
+    : { startAddr: DRIVER_HOME, endAddr: DRY_CLEANERS };
+}
 
 export interface OptimizedStop {
   town: string;
@@ -38,26 +54,30 @@ interface Cluster {
   ungeocoded: boolean;
 }
 
-function buildMapsUrl(clusters: Cluster[]): string {
+function buildMapsUrl(clusters: Cluster[], startAddr: string, endAddr: string): string {
   const wp = clusters
     .map((c) => [c.addressHint, c.colony, c.town, "NY"].filter(Boolean).join(", "))
     .map(encodeURIComponent)
     .join("|");
-  const origin = encodeURIComponent(DRIVER_START);
-  const destination = encodeURIComponent(DRIVER_END);
+  const origin = encodeURIComponent(startAddr);
+  const destination = encodeURIComponent(endAddr);
   const wpParam = wp ? `&waypoints=${wp}` : "";
   return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${wpParam}&travelmode=driving`;
 }
 
-export async function computeOptimizedRoute(orders: Order[]): Promise<OptimizedRoute> {
+export async function computeOptimizedRoute(
+  orders: Order[],
+  direction: RouteDirection = "pickup",
+): Promise<OptimizedRoute> {
+  const { startAddr, endAddr } = endpointsFor(direction);
   const warnings: string[] = [];
-  const startGeo = await geocodeAddress(DRIVER_START).catch(() => null);
+  const startGeo = await geocodeAddress(startAddr).catch(() => null);
   const endGeo =
-    DRIVER_END === DRIVER_START
+    endAddr === startAddr
       ? startGeo
-      : await geocodeAddress(DRIVER_END).catch(() => null);
-  const startInfo = { address: DRIVER_START, lat: startGeo?.lat ?? null, lng: startGeo?.lng ?? null };
-  const endInfo = { address: DRIVER_END, lat: endGeo?.lat ?? null, lng: endGeo?.lng ?? null };
+      : await geocodeAddress(endAddr).catch(() => null);
+  const startInfo = { address: startAddr, lat: startGeo?.lat ?? null, lng: startGeo?.lng ?? null };
+  const endInfo = { address: endAddr, lat: endGeo?.lat ?? null, lng: endGeo?.lng ?? null };
 
   if (orders.length === 0) {
     return {
@@ -141,7 +161,7 @@ export async function computeOptimizedRoute(orders: Order[]): Promise<OptimizedR
     stops,
     totalDistanceKm: Math.round(totalKm * 10) / 10,
     totalDistanceMiles: Math.round(totalKm * 0.621371 * 10) / 10,
-    mapsUrl: buildMapsUrl(ordered),
+    mapsUrl: buildMapsUrl(ordered, startAddr, endAddr),
     warnings,
     start: startInfo,
     end: endInfo,

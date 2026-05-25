@@ -35,6 +35,9 @@ interface Stop {
 
 interface RouteResponse {
   date: string;
+  dayName?: string;
+  direction?: "pickup" | "delivery";
+  isOperatingDay?: boolean;
   start: { address: string; lat: number | null; lng: number | null };
   end: { address: string; lat: number | null; lng: number | null };
   stops: Stop[];
@@ -43,6 +46,11 @@ interface RouteResponse {
   mapsUrl: string;
   warnings: string[];
 }
+
+type Direction = "pickup" | "delivery";
+
+// Mon–Thu only. Sun/Fri/Sat are non-operating days.
+const OPERATING_DAYS = new Set([1, 2, 3, 4]);
 
 interface UnitGroup {
   unitNumber: string;
@@ -103,10 +111,12 @@ function buildDayOptions(): DayOption[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  for (let i = 0; i < 7; i++) {
+  // Walk forward up to 14 days to collect the next 7 operating days (Mon–Thu).
+  for (let i = 0; i < 14 && days.length < 7; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const dow = d.getDay();
+    if (!OPERATING_DAYS.has(dow)) continue;
     days.push({
       date: toDateOnly(d),
       label: weekdays[dow]!,
@@ -117,10 +127,11 @@ function buildDayOptions(): DayOption[] {
   return days;
 }
 
-async function fetchRoute(date: string): Promise<RouteResponse> {
-  const res = await fetch(`${API_BASE}/route/today?date=${encodeURIComponent(date)}`, {
-    credentials: "include",
-  });
+async function fetchRoute(date: string, direction: Direction): Promise<RouteResponse> {
+  const res = await fetch(
+    `${API_BASE}/route/today?date=${encodeURIComponent(date)}&direction=${direction}`,
+    { credentials: "include" },
+  );
   if (!res.ok) throw new Error("Failed to fetch route");
   return res.json();
 }
@@ -128,17 +139,42 @@ async function fetchRoute(date: string): Promise<RouteResponse> {
 export function RoutePanel() {
   const dayOptions = useMemo(buildDayOptions, []);
   const [selectedDate, setSelectedDate] = useState<string>(dayOptions[0]!.date);
+  const [direction, setDirection] = useState<Direction>("pickup");
   const selectedOption = dayOptions.find((d) => d.date === selectedDate) ?? dayOptions[0]!;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["route", selectedDate],
-    queryFn: () => fetchRoute(selectedDate),
+    queryKey: ["route", selectedDate, direction],
+    queryFn: () => fetchRoute(selectedDate, direction),
     staleTime: 60_000,
   });
 
+  const directionLabel = direction === "delivery" ? "Delivery Route" : "Pickup Route";
   const headerTitle = selectedOption.isToday
-    ? "Today's Optimized Route"
-    : `${selectedOption.label}'s Optimized Route`;
+    ? `Today's ${directionLabel}`
+    : `${selectedOption.label}'s ${directionLabel}`;
+
+  const directionToggle = (
+    <div className="inline-flex rounded-md border border-border overflow-hidden text-xs font-medium">
+      {(["pickup", "delivery"] as const).map((d) => {
+        const active = direction === d;
+        return (
+          <button
+            key={d}
+            type="button"
+            onClick={() => setDirection(d)}
+            className={cn(
+              "px-3 py-1.5 transition-colors",
+              active
+                ? "bg-primary text-primary-foreground"
+                : "bg-card hover:bg-muted text-foreground",
+            )}
+          >
+            {d === "pickup" ? "Pickup (home → cleaners)" : "Delivery (cleaners → home)"}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   const daySelector = (
     <div className="flex flex-wrap gap-1.5">
@@ -185,6 +221,7 @@ export function RoutePanel() {
             </Button>
           )}
         </div>
+        {directionToggle}
         {daySelector}
       </div>
     </CardHeader>
@@ -211,11 +248,17 @@ export function RoutePanel() {
   }
 
   if (data.stops.length === 0) {
+    const nonOperating = data.isOperatingDay === false;
+    const empty = direction === "delivery"
+      ? "Nothing is at the cleaners to deliver right now."
+      : `No pickups scheduled for ${selectedOption.isToday ? "today" : selectedOption.label}.`;
     return (
       <Card>
         {headerBlock}
         <CardContent className="text-sm text-muted-foreground">
-          No pickups scheduled for {selectedOption.isToday ? "today" : selectedOption.label}.
+          {nonOperating
+            ? `No route on ${data.dayName ?? selectedOption.label} — the business runs Mon–Thu only.`
+            : empty}
         </CardContent>
       </Card>
     );

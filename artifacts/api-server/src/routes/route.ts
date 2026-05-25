@@ -6,6 +6,10 @@ import { computeOptimizedRoute } from "../lib/route-service";
 
 const router = Router();
 
+// The business runs Mon–Thu only. Sun/Fri/Sat have no routes.
+const ROUTE_DAYS = new Set([1, 2, 3, 4]);
+const WD_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 function toDateOnly(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -13,16 +17,30 @@ function toDateOnly(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function isoToDate(iso: string): Date {
+  const [y, m, day] = iso.split("-").map((n) => parseInt(n, 10));
+  return new Date(y!, (m ?? 1) - 1, day ?? 1);
+}
+
 router.get("/route/today", async (req, res) => {
   const requested = typeof req.query.date === "string" ? req.query.date.trim() : "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : toDateOnly(new Date());
+  const direction = req.query.direction === "delivery" ? "delivery" as const : "pickup" as const;
+  const d = isoToDate(date);
+  const dayName = WD_FULL[d.getDay()]!;
+  const isOperating = ROUTE_DAYS.has(d.getDay());
   try {
-    const orders = await db
-      .select()
-      .from(ordersTable)
-      .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
+    const orders = !isOperating
+      ? []
+      : direction === "delivery"
+        ? await db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"))
+        : await db.select().from(ordersTable)
+            .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
 
-    const route = await computeOptimizedRoute(orders);
+    const route = await computeOptimizedRoute(orders, direction);
+    if (!isOperating) {
+      route.warnings.unshift(`No route on ${dayName} (${date}). The business runs Mon–Thu only.`);
+    }
 
     const stopsWithDetail = route.stops.map((s, idx) => {
       const stopOrders = orders
@@ -48,6 +66,9 @@ router.get("/route/today", async (req, res) => {
 
     res.json({
       date,
+      dayName,
+      direction,
+      isOperatingDay: isOperating,
       start: route.start,
       end: route.end,
       stops: stopsWithDetail,

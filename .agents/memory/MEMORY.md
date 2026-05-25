@@ -1,3 +1,4 @@
 - [Twilio webhook signing](twilio-webhook-sig.md) — exact payload format for SHA1-HMAC; getting it wrong returns 403 Forbidden silently.
 - [Composite lib rebuild](composite-lib-rebuild.md) — schema edits in lib/db require `typecheck:libs` before api-server typecheck sees the new exports.
 - [SMS↔dashboard parity hooks](sms-dashboard-parity.md) — any state-changing side effect must live in a shared lib and be called from BOTH the SMS admin path AND the dashboard PATCH path.
+- [Route direction geometry](route-direction-geometry.md) — pickup = home→cleaners; delivery = cleaners→home; addresses live only in lib/route-service.ts; delivery filter is status=picked_up with no date.

@@ -71,9 +71,7 @@ const DAY_NUM: Record<string, number> = {
   Thursday: 4, Friday: 5, Saturday: 6,
 };
 
-const DRIVER_START = process.env.DRIVER_START_ADDRESS ?? "458 Riverside Drive, Fallsburg, NY";
-const DRIVER_END =
-  process.env.DRY_CLEANERS_ADDRESS ?? "16 Thompson Square, Monticello, NY 12701";
+// Driver home & dry-cleaners addresses live in lib/route-service.ts (single source of truth).
 
 const PAYMENT_PHONE = "(929) 345-0940";
 
@@ -206,16 +204,6 @@ function parseItemsText(text: string | null): Record<string, number> {
   return result;
 }
 
-function buildRouteUrl(stops: OrderRow[]): string {
-  const waypoints = stops
-    .map(s => [s.colonyAddress, s.colony, s.town, "NY"].filter(Boolean).join(", "))
-    .map(encodeURIComponent)
-    .join("|");
-  const origin = encodeURIComponent(DRIVER_START);
-  const destination = encodeURIComponent(DRIVER_END);
-  return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
-}
-
 type OrderRow = typeof ordersTable.$inferSelect;
 
 function formatOrder(o: OrderRow): string {
@@ -243,6 +231,7 @@ const ADMIN_MAIN_MENU = [
   "9. Update an order",
   "10. New order",
   "11. Filtered list (uses current filters)",
+  "12. Delivery route (cleaners → homes)",
   "",
   'Sort: "sort newest|oldest|pickup|name"',
   'Range: "range today|week|all"',
@@ -438,29 +427,61 @@ async function actionMarkMissedBatch(ids: number[]): Promise<string> {
 }
 
 // ─── Route day picker ─────────────────────────────────────────────────────────
-function buildRouteDayMenu(): { message: string; dates: string[] } {
+// ─── Operating-day rules ─────────────────────────────────────────────────────
+// The business runs Mon–Thu only (pickup Mon/Tue, dropoff Wed/Thu).
+// Sun/Fri/Sat have no routes at all.
+const ROUTE_DAYS = new Set([1, 2, 3, 4]); // Mon, Tue, Wed, Thu
+const WD_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function isRouteDay(d: Date): boolean { return ROUTE_DAYS.has(d.getDay()); }
+function isoToDate(iso: string): Date {
+  const [y, m, day] = iso.split("-").map((n) => parseInt(n, 10));
+  return new Date(y!, (m ?? 1) - 1, day ?? 1);
+}
+
+type RouteDir = "pickup" | "delivery";
+function routeHeader(dir: RouteDir): string {
+  return dir === "delivery" ? "🚚 DELIVERY ROUTE" : "🚚 ROUTE";
+}
+function buildRouteDayMenu(dir: RouteDir = "pickup"): { message: string; dates: string[] } {
   const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const lines: string[] = ["🚚 ROUTE — pick a day:", ""];
+  const header = dir === "delivery"
+    ? "🚚 DELIVERY ROUTE — pick a day (cleaners → homes):"
+    : "🚚 ROUTE — pick a day:";
+  const lines: string[] = [header, ""];
   const dates: string[] = [];
-  for (let i = 0; i < 7; i++) {
+  // Walk forward up to 14 days to collect the next 7 operating days (Mon–Thu).
+  for (let i = 0; i < 14 && dates.length < 7; i++) {
     const d = new Date(today); d.setDate(today.getDate() + i);
+    if (!isRouteDay(d)) continue;
     const label = `${wd[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}${i === 0 ? " (Today)" : ""}`;
-    lines.push(`${i + 1}. ${label}`);
+    lines.push(`${dates.length + 1}. ${label}`);
     dates.push(toDateOnly(d));
   }
-  lines.push("", "0. Back to menu");
+  lines.push("", "(Sun/Fri/Sat are not operating days.)", "", "0. Back to menu");
   return { message: lines.join("\n"), dates };
 }
-async function actionRouteForDate(date: string): Promise<string> {
-  const orders = await db.select().from(ordersTable)
+
+async function fetchRouteOrders(date: string, dir: RouteDir) {
+  if (dir === "delivery") {
+    // Delivery = anything currently at the cleaners, ready to be returned home.
+    // We don't filter by pickupDate — once an order is "picked_up", it sits at
+    // the cleaners until delivered, regardless of which day it was collected.
+    return db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"));
+  }
+  return db.select().from(ordersTable)
     .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
-  if (orders.length === 0) return `No pickups for ${date}.`;
-  const { computeOptimizedRoute } = await import("../lib/route-service");
-  const route = await computeOptimizedRoute(orders);
-  let msg = `🚚 ROUTE — ${date} — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
+}
+
+function formatRouteMessage(
+  dir: RouteDir,
+  dateLabel: string,
+  orders: { id: number; unitNumber: string; name: string; gateAccess: string | null; phoneNumber: string }[],
+  route: { stops: { colony: string; addressHint: string | null; town: string; orderIds: number[] }[]; totalDistanceMiles: number; start: { address: string }; end: { address: string }; warnings: string[] },
+): string {
+  let msg = `${routeHeader(dir)} — ${dateLabel} — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
   if (route.totalDistanceMiles > 0) msg += ` · ~${route.totalDistanceMiles} mi`;
-  msg += `\nStart: ${DRIVER_START}\n`;
+  msg += `\nStart: ${route.start.address}\n`;
   route.stops.forEach((s, i) => {
     const oh = orders.filter((o) => s.orderIds.includes(o.id));
     msg += `\n${i + 1}. ${s.colony}${s.addressHint ? ` (${s.addressHint})` : ""}, ${s.town}\n`;
@@ -469,9 +490,25 @@ async function actionRouteForDate(date: string): Promise<string> {
       msg += `   • Unit ${o.unitNumber} — ${o.name}${gate}\n     📞 ${o.phoneNumber}\n`;
     });
   });
-  msg += `\nEnd: ${DRIVER_END}`;
+  msg += `\nEnd: ${route.end.address}`;
   if (route.warnings.length > 0) msg += `\n\n⚠️ ${route.warnings.join("; ")}`;
   return msg;
+}
+
+async function actionRouteForDate(date: string, dir: RouteDir = "pickup"): Promise<string> {
+  const d = isoToDate(date);
+  if (!isRouteDay(d)) {
+    return `No route on ${WD_FULL[d.getDay()]} (${date}). The business runs Mon–Thu only.`;
+  }
+  const orders = await fetchRouteOrders(date, dir);
+  if (orders.length === 0) {
+    return dir === "delivery"
+      ? `No deliveries — nothing is currently at the cleaners.`
+      : `No pickups for ${date}.`;
+  }
+  const { computeOptimizedRoute } = await import("../lib/route-service");
+  const route = await computeOptimizedRoute(orders, dir);
+  return formatRouteMessage(dir, date, orders, route);
 }
 
 // ─── New-order (admin-initiated) flow scratch ─────────────────────────────────
@@ -492,36 +529,22 @@ function readScratch(s: string | null): NewOrderScratch {
 }
 function writeScratch(o: NewOrderScratch): string { return JSON.stringify(o); }
 
-async function actionRoute(): Promise<string> {
-  const today = toDateOnly(new Date());
-  const orders = await db
-    .select().from(ordersTable)
-    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)));
-  if (orders.length === 0) return "No pickups for today's route.";
-
+async function actionRoute(dir: RouteDir = "pickup"): Promise<string> {
+  const now = new Date();
+  if (!isRouteDay(now)) {
+    const which = dir === "delivery" ? "12" : "6";
+    return `No route today — ${WD_FULL[now.getDay()]} is not an operating day. The business runs Mon–Thu only. Use option ${which} to pick a different day.`;
+  }
+  const today = toDateOnly(now);
+  const orders = await fetchRouteOrders(today, dir);
+  if (orders.length === 0) {
+    return dir === "delivery"
+      ? `No deliveries — nothing is currently at the cleaners.`
+      : `No pickups for today's route.`;
+  }
   const { computeOptimizedRoute } = await import("../lib/route-service");
-  const route = await computeOptimizedRoute(orders);
-
-  let msg = `🚚 OPTIMIZED ROUTE — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
-  if (route.totalDistanceMiles > 0) {
-    msg += ` · ~${route.totalDistanceMiles} mi`;
-  }
-  msg += `\nStart: ${DRIVER_START}\n`;
-
-  route.stops.forEach((s, i) => {
-    const ordersHere = orders.filter((o) => s.orderIds.includes(o.id));
-    msg += `\n${i + 1}. ${s.colony}${s.addressHint ? ` (${s.addressHint})` : ""}, ${s.town}\n`;
-    ordersHere.forEach((o) => {
-      const gate = o.gateAccess ? ` · Gate ${o.gateAccess}` : "";
-      msg += `   • Unit ${o.unitNumber} — ${o.name}${gate}\n`;
-      msg += `     📞 ${o.phoneNumber}\n`;
-    });
-  });
-  msg += `\nEnd: ${DRIVER_END}`;
-  if (route.warnings.length > 0) {
-    msg += `\n\n⚠️ ${route.warnings.join("; ")}`;
-  }
-  return msg;
+  const route = await computeOptimizedRoute(orders, dir);
+  return formatRouteMessage(dir, "today", orders, route);
 }
 
 async function actionStats(range: "today" | "week" | "all"): Promise<string> {
@@ -1147,14 +1170,15 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
-  // ── Route day picker ──────────────────────────────────────────────────────
-  if (step === "admin_route_pick_day") {
+  // ── Route day picker (pickup or delivery) ─────────────────────────────────
+  if (step === "admin_route_pick_day" || step === "admin_delivery_pick_day") {
+    const dir: RouteDir = step === "admin_delivery_pick_day" ? "delivery" : "pickup";
     const dates = (session?.items ?? "").split(",").filter(Boolean);
     if (!/^\d+$/.test(text)) return `Please reply 1-${dates.length}, or "0" to go back.`;
     const pick = parseInt(text, 10);
     if (pick < 1 || pick > dates.length) return `Please reply 1-${dates.length}, or "0" to go back.`;
     const date = dates[pick - 1]!;
-    const result = await actionRouteForDate(date);
+    const result = await actionRouteForDate(date, dir);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
@@ -1291,6 +1315,11 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     case "10": {
       await setAdminStep(from, "admin_new_phone", writeScratch({}));
       return `📱 NEW ORDER — what's the customer's phone? (e.g. +19293450940)\n\n0. Cancel`;
+    }
+    case "12": {
+      const { message, dates } = buildRouteDayMenu("delivery");
+      await setAdminStep(from, "admin_delivery_pick_day", dates.join(","));
+      return message;
     }
     default:
       await setAdminStep(from, "admin_main");
