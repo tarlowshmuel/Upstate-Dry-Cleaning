@@ -479,6 +479,12 @@ export default function Dashboard() {
             </p>
           </CardContent>
         </Card>
+
+        <footer className="mt-6 pb-4 text-center text-xs text-muted-foreground">
+          <a href="legal" className="hover:text-foreground underline-offset-4 hover:underline">
+            Privacy Policy &amp; Terms of Service
+          </a>
+        </footer>
       </div>
     </div>
   );

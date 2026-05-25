@@ -1,0 +1,242 @@
+import { Link } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+
+const BUSINESS_NAME = "Fresh Pick Dry Cleaning";
+const SERVICE_AREA = "Sullivan County, NY";
+const CONTACT_EMAIL = "contact@freshpickdrycleaning.com";
+const LAST_UPDATED = "May 25, 2026";
+
+export default function Legal() {
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        <Link href="/">
+          <Button variant="ghost" size="sm" className="mb-6 gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back to dashboard
+          </Button>
+        </Link>
+
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight">Privacy Policy &amp; Terms of Service</h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            {BUSINESS_NAME} &middot; Last updated {LAST_UPDATED}
+          </p>
+        </header>
+
+        {/* ─────────────── PRIVACY POLICY ─────────────── */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="text-2xl">Privacy Policy</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm leading-relaxed">
+            <section>
+              <h2 className="font-semibold text-base mb-2">1. Information we collect</h2>
+              <p>
+                When you use {BUSINESS_NAME} to schedule a dry cleaning pickup, we
+                collect the information you provide by SMS, including: your name,
+                mobile phone number, pickup address (colony, unit number, and gate
+                code if applicable), and the requested pickup date.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">2. How we use your information</h2>
+              <p>
+                We use your information solely to schedule, pick up, clean, and
+                return your laundry, and to send you SMS updates about the status of
+                your order (e.g., when your order has been picked up or delivered
+                back to your unit).
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">
+                3. No sharing of mobile information
+              </h2>
+              <p className="font-medium">
+                {BUSINESS_NAME} does not sell, rent, share, or otherwise disclose
+                your mobile phone number or SMS opt-in data to any third parties or
+                affiliates for marketing or promotional purposes. Mobile information
+                is used only to operate the service you requested.
+              </p>
+              <p className="mt-2">
+                We do not share mobile opt-in consent or phone numbers with third
+                parties. Aggregate, anonymized data that does not identify any
+                individual user may be used for internal operational purposes.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">4. SMS messaging program</h2>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>
+                  <span className="font-medium">Program name:</span> {BUSINESS_NAME}{" "}
+                  Pickup Notifications
+                </li>
+                <li>
+                  <span className="font-medium">Message frequency:</span> Message
+                  frequency varies based on your order activity. You will typically
+                  receive 2–6 messages per pickup (confirmation, pickup
+                  notification, delivery notification, and any necessary follow-up).
+                  You will not receive marketing or promotional messages.
+                </li>
+                <li>
+                  <span className="font-medium">Message and data rates may apply.</span>{" "}
+                  Standard messaging and data rates from your wireless carrier may
+                  apply to each message sent or received. Contact your carrier for
+                  details about your plan.
+                </li>
+                <li>
+                  <span className="font-medium">Opt-in:</span> By texting "clean" or
+                  any pickup request to our number, you consent to receive SMS
+                  messages from {BUSINESS_NAME} related to your dry cleaning orders.
+                </li>
+                <li>
+                  <span className="font-medium">Opt-out:</span> You can opt out at
+                  any time by replying <span className="font-mono">STOP</span> to
+                  any of our messages. You will receive a confirmation message and
+                  no further messages will be sent.
+                </li>
+                <li>
+                  <span className="font-medium">Help:</span> Reply{" "}
+                  <span className="font-mono">HELP</span> for assistance, or contact
+                  us at {CONTACT_EMAIL}.
+                </li>
+                <li>
+                  <span className="font-medium">Supported carriers:</span> Compatible
+                  with all major U.S. carriers. Carriers are not liable for delayed
+                  or undelivered messages.
+                </li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">5. Data retention &amp; security</h2>
+              <p>
+                We retain order information for as long as necessary to fulfill the
+                service and to maintain reasonable business records. We take
+                reasonable administrative and technical measures to protect your
+                information from unauthorized access.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">6. Your rights</h2>
+              <p>
+                You may request that we delete your personal information from our
+                records by emailing {CONTACT_EMAIL}. Note that opting out of SMS
+                does not automatically delete prior order records.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">7. Changes to this policy</h2>
+              <p>
+                We may update this policy from time to time. Material changes will be
+                reflected by updating the "Last updated" date at the top of this
+                page.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">8. Contact</h2>
+              <p>
+                Questions about this policy? Email {CONTACT_EMAIL}.
+              </p>
+            </section>
+          </CardContent>
+        </Card>
+
+        {/* ─────────────── TERMS OF SERVICE ─────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Terms of Service</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm leading-relaxed">
+            <section>
+              <h2 className="font-semibold text-base mb-2">1. The service</h2>
+              <p>
+                {BUSINESS_NAME} provides SMS-based dry cleaning pickup and delivery
+                in {SERVICE_AREA}. By using the service, you agree to these terms.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">2. Scheduling and pickup</h2>
+              <p>
+                Pickup requests are scheduled via SMS. We will make reasonable
+                efforts to pick up your order on the requested date, but pickup and
+                delivery times are estimates and are not guaranteed. Please leave
+                your bag at the agreed-upon location and provide accurate gate codes
+                when applicable.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">3. Pricing and payment</h2>
+              <p>
+                Pricing is communicated at or before pickup. Payment is due upon
+                delivery unless otherwise agreed. You are responsible for the full
+                amount owed for any order we have picked up and processed.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">4. Garment care &amp; liability</h2>
+              <p>
+                We handle your garments with reasonable care, but we are not liable
+                for normal wear, pre-existing damage, items left in pockets, or
+                damage caused by manufacturer defects or care label inaccuracies.
+                Our maximum liability for any lost or damaged item is limited to ten
+                (10) times the cleaning charge for that item, not to exceed its fair
+                market value. Notify us of any concern within 48 hours of delivery.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">5. Cancellation &amp; missed pickups</h2>
+              <p>
+                You may cancel a scheduled pickup by replying to our confirmation
+                message before the pickup window. If we attempt a pickup and the bag
+                is not available, we may mark the order as missed; a re-pickup fee
+                may apply.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">6. Acceptable use</h2>
+              <p>
+                You agree not to use the service to submit fraudulent orders, harass
+                staff, or send abusive messages. We reserve the right to refuse
+                service.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">7. Changes to these terms</h2>
+              <p>
+                We may update these terms from time to time. Continued use of the
+                service after changes are posted constitutes acceptance of the
+                updated terms.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">8. Contact</h2>
+              <p>
+                Questions about these terms? Email {CONTACT_EMAIL}.
+              </p>
+            </section>
+          </CardContent>
+        </Card>
+
+        <footer className="mt-8 text-center text-xs text-muted-foreground">
+          &copy; {new Date().getFullYear()} {BUSINESS_NAME}. All rights reserved.
+        </footer>
+      </div>
+    </div>
+  );
+}
