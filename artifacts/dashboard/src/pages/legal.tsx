@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 const BUSINESS_NAME = "Dry Cleaning Service";
 const SERVICE_AREA = "Sullivan County, NY";
 const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
+const CONTACT_PHONE = "(845) 606-0022";
 const LAST_UPDATED = "May 25, 2026";
 
 export default function Legal() {
@@ -144,7 +145,7 @@ export default function Legal() {
             <section>
               <h2 className="font-semibold text-base mb-2">8. Contact</h2>
               <p>
-                Questions about this policy? Email {CONTACT_EMAIL}.
+                Questions about this policy? Email {CONTACT_EMAIL} or text/call {CONTACT_PHONE}.
               </p>
             </section>
           </CardContent>
@@ -282,7 +283,7 @@ export default function Legal() {
             <section>
               <h2 className="font-semibold text-base mb-2">8. Contact</h2>
               <p>
-                Questions about these terms? Email {CONTACT_EMAIL}.
+                Questions about these terms? Email {CONTACT_EMAIL} or text/call {CONTACT_PHONE}.
               </p>
             </section>
           </CardContent>
