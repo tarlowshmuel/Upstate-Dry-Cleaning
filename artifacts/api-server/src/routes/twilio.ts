@@ -242,12 +242,20 @@ function adminUpdateMenu(order: OrderRow): string {
     `✏️ UPDATE Order #${order.id} — ${order.name}`,
     `Status: ${order.status} | ${order.paid ? "PAID" : "UNPAID"}`,
     ``,
+    `── Status ──`,
     `1. Mark picked up`,
     `2. Mark delivered`,
     `3. Mark missed`,
     `4. Mark paid`,
     `5. Mark unpaid`,
-    `6. Set items`,
+    ``,
+    `── Edit fields ──`,
+    `6. Items`,
+    `7. Name`,
+    `8. Phone`,
+    `9. Address (town · colony · unit/gate)`,
+    `10. Pickup date`,
+    `11. Notes`,
     ``,
     `0. Back to menu`,
   ].join("\n");
@@ -745,25 +753,171 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       await setAdminStep(from, "admin_main");
       return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
     }
-    if (text === "6") {
+    // Field-edit options 6-11: load order and jump to the right step.
+    const fieldEdit: Record<string, { step: string; prompt: (o: OrderRow) => string }> = {
+      "6": {
+        step: "admin_update_items",
+        prompt: (o) =>
+          `📦 Items for #${o.id} (${o.name}).\n\nList with quantities, comma-separated.\n` +
+          `Text "clear" to remove, or "0" to cancel.` +
+          (o.items ? `\n\nCurrent: ${o.items}` : ""),
+      },
+      "7": {
+        step: "admin_edit_name",
+        prompt: (o) => `📛 New name for #${o.id}?\n\nCurrent: ${o.name}\n\n"0" to cancel.`,
+      },
+      "8": {
+        step: "admin_edit_phone",
+        prompt: (o) =>
+          `📞 New phone for #${o.id}? (e.g. +19293450940)\n\nCurrent: ${o.phoneNumber}\n\n"0" to cancel.`,
+      },
+      "9": {
+        step: "admin_edit_addr_town",
+        prompt: (o) =>
+          `🏘️ New town for #${o.id}?\n\nCurrent: ${o.town}\n\n${townList()}\n\n"0" to cancel.`,
+      },
+      "10": {
+        step: "admin_edit_pickup",
+        prompt: (o) =>
+          `📅 New pickup date for #${o.id}? (YYYY-MM-DD)\n\n` +
+          `Current: ${o.pickupDate ?? "—"}\n\n` +
+          `Text "clear" to remove date, or "0" to cancel.`,
+      },
+      "11": {
+        step: "admin_edit_notes",
+        prompt: (o) =>
+          `📝 New driver notes for #${o.id}?\n\nCurrent: ${o.notes ?? "—"}\n\n` +
+          `Text "clear" to remove, or "0" to cancel.`,
+      },
+    };
+    if (fieldEdit[text]) {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
       if (!order) {
         await setAdminStep(from, "admin_main");
         return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
       }
-      await setAdminStep(from, "admin_update_items", String(id));
-      const current = order.items ? `\n\nCurrent: ${order.items}` : "";
-      return `📦 Enter items for order #${id} (${order.name}).\n\n` +
-             `List with quantities, comma-separated.\nExamples:\n  • 1 bag of laundry\n  • 2 suits, 3 dress shirts, 1 coat\n\n` +
-             `Text "clear" to remove, or "0" to cancel.${current}`;
+      const { step: nextStep, prompt } = fieldEdit[text]!;
+      await setAdminStep(from, nextStep, String(id));
+      return prompt(order);
     }
     if (!["1", "2", "3", "4", "5"].includes(text)) {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      return `Please reply 1-6, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
+      return `Please reply 1-11, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
     const result = await actionApplyUpdate(id, text);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Single-field edits ────────────────────────────────────────────────────
+  const editFieldSteps = new Set([
+    "admin_edit_name", "admin_edit_phone", "admin_edit_pickup", "admin_edit_notes",
+    "admin_edit_addr_town", "admin_edit_addr_colony", "admin_edit_addr_unit", "admin_edit_addr_gate",
+  ]);
+  if (step && editFieldSteps.has(step)) {
+    // Scratch is either a bare numeric id (single-field flows) or a JSON
+    // payload `{id, town?, colony?, unit?}` (address subflow). Using JSON
+    // instead of `id|town|colony|unit` so user-typed values that contain
+    // delimiter characters can't corrupt later parsing.
+    let id = NaN;
+    let addr: { id: number; town?: string; colony?: string; unit?: string } = { id: NaN };
+    const sc = session?.items ?? "";
+    if (sc.startsWith("{")) {
+      try {
+        addr = JSON.parse(sc);
+        id = Number(addr.id);
+      } catch { /* fall through to lost-track */ }
+    } else {
+      id = parseInt(sc, 10);
+    }
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
+    }
+
+    if (step === "admin_edit_name") {
+      if (!raw.trim()) return `Name can't be empty. Try again, or "0" to cancel.`;
+      await db.update(ordersTable).set({ name: raw.trim() }).where(eq(ordersTable.id, id));
+      await setAdminStep(from, "admin_main");
+      return `✅ #${id} — name set to "${raw.trim()}"\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+
+    if (step === "admin_edit_phone") {
+      const digits = raw.replace(/[^\d+]/g, "");
+      if (!/^\+?\d{10,15}$/.test(digits)) {
+        return `Please send a valid phone (e.g. +19293450940), or "0" to cancel.`;
+      }
+      const phone = digits.startsWith("+") ? digits : `+1${digits.replace(/^1/, "")}`;
+      await db.update(ordersTable).set({ phoneNumber: phone }).where(eq(ordersTable.id, id));
+      await setAdminStep(from, "admin_main");
+      return `✅ #${id} — phone set to ${phone}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+
+    if (step === "admin_edit_pickup") {
+      const value = (text === "clear" || text === "none") ? null : raw.trim();
+      if (value !== null) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return `Date must be YYYY-MM-DD (e.g. 2026-06-03). Try again, or "0" to cancel.`;
+        }
+        const [y, m, d] = value.split("-").map(Number);
+        const dt = new Date(Date.UTC(y!, m! - 1, d!));
+        if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m! - 1 || dt.getUTCDate() !== d) {
+          return `Not a real calendar date. Try again, or "0" to cancel.`;
+        }
+      }
+      await db.update(ordersTable).set({ pickupDate: value }).where(eq(ordersTable.id, id));
+      await setAdminStep(from, "admin_main");
+      return `✅ #${id} — pickup date ${value ? `set to ${value}` : "cleared"}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+
+    if (step === "admin_edit_notes") {
+      const value = (text === "clear" || text === "none") ? null : raw;
+      await db.update(ordersTable).set({ notes: value }).where(eq(ordersTable.id, id));
+      await setAdminStep(from, "admin_main");
+      return `✅ #${id} — notes ${value ? "updated" : "cleared"}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+
+    // Address: 4 sub-steps — town → colony → unit → gate. State carried as
+    // JSON in `items`; bare-id scratch from option 9 is upgraded to JSON on
+    // the town step.
+    if (step === "admin_edit_addr_town") {
+      const n = parseInt(text, 10);
+      if (isNaN(n) || n < 1 || n > TOWNS.length) {
+        return `Reply 1-${TOWNS.length}, or "0" to cancel.\n\n${townList()}`;
+      }
+      const town = TOWNS[n - 1]!;
+      await setAdminStep(from, "admin_edit_addr_colony", JSON.stringify({ id, town }));
+      return `🏠 Colony / building / development name?\n\n"0" to cancel.`;
+    }
+    if (step === "admin_edit_addr_colony") {
+      if (!raw.trim()) return `Colony can't be empty. Try again, or "0" to cancel.`;
+      await setAdminStep(from, "admin_edit_addr_unit",
+        JSON.stringify({ ...addr, colony: raw.trim() }));
+      return `🚪 Unit number / apartment?\n\n"0" to cancel.`;
+    }
+    if (step === "admin_edit_addr_unit") {
+      if (!raw.trim()) return `Unit can't be empty. Try again, or "0" to cancel.`;
+      await setAdminStep(from, "admin_edit_addr_gate",
+        JSON.stringify({ ...addr, unit: raw.trim() }));
+      return `🔑 Gate code or access notes? (or "none" to skip)\n\n"0" to cancel.`;
+    }
+    if (step === "admin_edit_addr_gate") {
+      const town = addr.town;
+      const colony = addr.colony;
+      const unit = addr.unit;
+      if (!town || !colony || !unit) {
+        await setAdminStep(from, "admin_main");
+        return `Address edit lost its state — please start over.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      const gate = (text === "none" || text === "clear" || !raw.trim()) ? null : raw.trim();
+      await db.update(ordersTable)
+        .set({ town, colony, unitNumber: unit, gateAccess: gate })
+        .where(eq(ordersTable.id, id));
+      await setAdminStep(from, "admin_main");
+      return `✅ #${id} — address updated:\n  ${town} · ${colony} · Unit ${unit}` +
+             (gate ? `\n  Gate: ${gate}` : "") +
+             `\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
   }
 
   // ── Update flow: capturing items ───────────────────────────────────────────

@@ -58,6 +58,46 @@ export const CreateOrderBody = zod.object({
 
 
 /**
+ * @summary Edit any subset of an order's editable fields
+ */
+export const UpdateOrderParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateOrderBody = zod.object({
+  "name": zod.string().optional(),
+  "phoneNumber": zod.string().optional(),
+  "town": zod.string().optional(),
+  "colony": zod.string().optional(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string().optional(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish()
+}).describe('All fields optional; only provided fields are updated.')
+
+export const UpdateOrderResponse = zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "phoneNumber": zod.string(),
+  "name": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "cleanerTickets": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
+  "status": zod.string(),
+  "paid": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Update order status
  */
 export const UpdateOrderStatusParams = zod.object({

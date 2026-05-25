@@ -10,3 +10,7 @@ A multi-turn SMS flow (offer → confirm → pick → commit) takes seconds-to-m
 **Why:** without id binding, the YES branch silently re-queries "latest matching" and can act on the wrong row. Without the conditional write, a stale conversation can regress an order that was already handled elsewhere (e.g. revive a delivered order back to pending).
 
 **How to apply:** any time the customer or admin replies "yes/confirm/pick N" to do something to a row referenced in an earlier message — store the id when you send the message, re-validate at write, and report skipped/ineligible rows rather than swallowing them.
+
+## Scratch-state encoding
+
+Multi-step SMS flows often carry intermediate values between turns (e.g. an address being collected field by field). Do NOT concatenate them with a delimiter character — colony names, notes, items, etc. can contain `|`, `,`, `:` and corrupt later parsing silently. Use JSON and parse it back; reject the conversation if parse fails. The cost is a few bytes; the benefit is no class of silent data-corruption bugs from user input.

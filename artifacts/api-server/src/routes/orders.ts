@@ -82,6 +82,73 @@ router.post("/orders", async (req, res) => {
   res.status(500).json({ error: "Could not generate unique order number" });
 });
 
+const phoneRe = /^\+?\d{10,15}$/;
+const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+const updateOrderSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    phoneNumber: z
+      .string()
+      .trim()
+      .regex(phoneRe, "Phone must be 10-15 digits, optional leading +")
+      .optional(),
+    town: z.string().trim().min(1).optional(),
+    colony: z.string().trim().min(1).optional(),
+    colonyAddress: z.string().trim().nullable().optional(),
+    unitNumber: z.string().trim().min(1).optional(),
+    gateAccess: z.string().trim().nullable().optional(),
+    items: z.string().trim().nullable().optional(),
+    notes: z.string().trim().nullable().optional(),
+    pickupDate: z
+      .string()
+      .regex(dateRe, "Date must be YYYY-MM-DD")
+      .refine((s) => {
+        const [y, m, d] = s.split("-").map(Number);
+        const dt = new Date(Date.UTC(y!, m! - 1, d!));
+        return (
+          dt.getUTCFullYear() === y &&
+          dt.getUTCMonth() === m! - 1 &&
+          dt.getUTCDate() === d
+        );
+      }, "Invalid calendar date")
+      .nullable()
+      .optional(),
+  })
+  .strict();
+
+router.patch("/orders/:id", async (req, res) => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid order ID" });
+    return;
+  }
+  const parsed = updateOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid update", details: parsed.error.issues });
+    return;
+  }
+  // Only include keys that were actually sent so we never overwrite a field
+  // with undefined.
+  const patch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parsed.data)) {
+    if (v !== undefined) patch[k] = v;
+  }
+  if (Object.keys(patch).length === 0) {
+    res.status(400).json({ error: "No fields provided" });
+    return;
+  }
+  const [updated] = await db
+    .update(ordersTable)
+    .set(patch)
+    .where(eq(ordersTable.id, id))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  res.json(updated);
+});
+
 router.patch("/orders/:id/status", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   const { status } = req.body as { status?: string };

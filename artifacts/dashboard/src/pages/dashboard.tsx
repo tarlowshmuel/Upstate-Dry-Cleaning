@@ -30,6 +30,7 @@ import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, Cir
 import { Button } from "@/components/ui/button";
 import { RoutePanel } from "@/components/route-panel";
 import { NewOrderDialog } from "@/components/new-order-dialog";
+import { EditOrderDialog } from "@/components/edit-order-dialog";
 
 function ItemsList({ text }: { text: string | null | undefined }) {
   if (!text || !text.trim()) return <span className="text-muted-foreground/40 text-sm">—</span>;
@@ -384,12 +385,15 @@ export default function Dashboard() {
 
                         {/* Customer */}
                         <TableCell className="py-4">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-foreground text-sm">{order.name}</span>
-                            <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-primary/60" />
-                              {order.phoneNumber}
-                            </span>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="font-medium text-foreground text-sm truncate">{order.name}</span>
+                              <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
+                                <Phone className="w-3 h-3 text-primary/60" />
+                                {order.phoneNumber}
+                              </span>
+                            </div>
+                            <EditOrderDialog order={order} />
                           </div>
                         </TableCell>
 
@@ -482,10 +486,12 @@ export default function Dashboard() {
                 { num: "2", label: "Orders at cleaners", desc: "Picked up, awaiting return" },
                 { num: "3", label: "Pending orders", desc: "All not-yet-picked-up" },
                 { num: "4", label: "Unpaid orders", desc: "Owe money" },
-                { num: "5", label: "Today's route", desc: "Stops in driving order with addresses" },
-                { num: "6", label: "Stats", desc: "Today / week / all-time totals" },
-                { num: "7", label: "Look up an order", desc: "Search by name, phone, or ID" },
-                { num: "8", label: "Update an order", desc: "Search then mark picked up / paid / etc." },
+                { num: "5", label: "Missed pickups", desc: "Batch-mark missed + auto-notify customers" },
+                { num: "6", label: "Route (any day)", desc: "Pick a day, get optimized stop order" },
+                { num: "7", label: "Stats", desc: "Today / week / all-time totals" },
+                { num: "8", label: "Look up an order", desc: "Search by name, phone, or ID" },
+                { num: "9", label: "Update an order", desc: "Mark status, paid, or edit any field" },
+                { num: "10", label: "New order (SMS)", desc: "Create an order over text" },
               ].map(({ num, label, desc }) => (
                 <div key={num} className="flex gap-2 items-start">
                   <span className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
@@ -500,6 +506,8 @@ export default function Dashboard() {
             </div>
             <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/40">
               Reply <span className="font-mono text-foreground">0</span> or <span className="font-mono text-foreground">menu</span> at any time to return to the main menu.
+              Inside Update, options <span className="font-mono text-foreground">6–11</span> let you edit items, name, phone, address, pickup date, and notes.
+              Inline anywhere: <span className="font-mono text-foreground">sort newest|oldest|pickup|name</span>, <span className="font-mono text-foreground">range today|week|all</span>.
             </p>
           </CardContent>
         </Card>

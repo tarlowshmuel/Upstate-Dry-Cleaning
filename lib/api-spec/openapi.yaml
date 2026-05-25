@@ -58,6 +58,34 @@ paths:
                 $ref: "#/components/schemas/Order"
         "400":
           description: Validation error
+  /orders/{id}:
+    patch:
+      operationId: updateOrder
+      tags: [orders]
+      summary: Edit any subset of an order's editable fields
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderInput"
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error
+        "404":
+          description: Order not found
   /orders/{id}/status:
     patch:
       operationId: updateOrderStatus
@@ -197,6 +225,31 @@ components:
         - town
         - colony
         - unitNumber
+    UpdateOrderInput:
+      type: object
+      description: All fields optional; only provided fields are updated.
+      properties:
+        name:
+          type: string
+        phoneNumber:
+          type: string
+        town:
+          type: string
+        colony:
+          type: string
+        colonyAddress:
+          type: ["string", "null"]
+        unitNumber:
+          type: string
+        gateAccess:
+          type: ["string", "null"]
+        items:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        pickupDate:
+          type: ["string", "null"]
+          format: date
     OrderStatusUpdate:
       type: object
       properties:

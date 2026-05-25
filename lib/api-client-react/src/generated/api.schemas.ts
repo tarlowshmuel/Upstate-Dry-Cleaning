@@ -52,6 +52,27 @@ export interface CreateOrderInput {
   pickupDate?: string | null;
 }
 
+/**
+ * All fields optional; only provided fields are updated.
+ */
+export interface UpdateOrderInput {
+  name?: string;
+  phoneNumber?: string;
+  town?: string;
+  colony?: string;
+  /** @nullable */
+  colonyAddress?: string | null;
+  unitNumber?: string;
+  /** @nullable */
+  gateAccess?: string | null;
+  /** @nullable */
+  items?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  pickupDate?: string | null;
+}
+
 export interface OrderStatusUpdate {
   status: string;
 }
