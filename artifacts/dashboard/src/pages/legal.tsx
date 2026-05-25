@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
-const BUSINESS_NAME = "Upstate Dry Cleaning";
+const BUSINESS_NAME = "Dry Cleaning Service";
 const SERVICE_AREA = "Sullivan County, NY";
 const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
 const CONTACT_PHONE = "(845) 606-0022";

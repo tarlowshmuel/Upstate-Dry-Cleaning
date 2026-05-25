@@ -451,7 +451,7 @@ function customerStatusMessage(order: OrderRow, newStatus: string): string | nul
     case "picked_up":
       return `${greeting} ✅ We just picked up your order ${order.orderNumber} from ${order.colony}. It's on the way to the cleaners — we'll text you again when it's been delivered back to your unit.`;
     case "delivered":
-      return `${greeting} 🧺 Your dry cleaning order ${order.orderNumber} has been delivered back to ${order.colony}, Unit ${order.unitNumber}. Thanks for choosing Upstate Dry Cleaning!${order.paid ? "" : " (Reminder: payment still due.)"}`;
+      return `${greeting} 🧺 Your dry cleaning order ${order.orderNumber} has been delivered back to ${order.colony}, Unit ${order.unitNumber}. Thanks for choosing Dry Cleaning Service!${order.paid ? "" : " (Reminder: payment still due.)"}`;
     case "missed":
       return `${greeting} We weren't able to pick up your order ${order.orderNumber} today. Please text us to reschedule — sorry for the inconvenience!`;
     default:
@@ -809,7 +809,7 @@ router.post("/webhook/twilio", async (req, res) => {
         },
       });
     res.send(twimlResponse(
-      `Welcome to Upstate Dry Cleaning! 👔\n\n` +
+      `Welcome to Dry Cleaning Service! 👔\n\n` +
       `${welcomeIntro()}\n\n` +
       `What is your full name?`
     ));
@@ -966,7 +966,7 @@ router.post("/webhook/twilio-fallback", (req, res) => {
   res.setHeader("Content-Type", "text/xml");
   res.send(
     twimlResponse(
-      "Sorry, Upstate Dry Cleaning is having a temporary technical issue. " +
+      "Sorry, Dry Cleaning Service is having a temporary technical issue. " +
       "Please try texting again in a few minutes, or call/text (845) 606-0022 directly. Thank you for your patience!"
     )
   );
