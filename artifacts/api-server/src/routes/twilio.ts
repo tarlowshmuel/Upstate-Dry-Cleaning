@@ -411,7 +411,7 @@ function customerStatusMessage(order: OrderRow, newStatus: string): string | nul
     case "picked_up":
       return `${greeting} ✅ We just picked up your order ${order.orderNumber} from ${order.colony}. It's on the way to the cleaners — we'll text you again when it's been delivered back to your unit.`;
     case "delivered":
-      return `${greeting} 🧺 Your dry cleaning order ${order.orderNumber} has been delivered back to ${order.colony}, Unit ${order.unitNumber}. Thanks for choosing Fresh Pick!${order.paid ? "" : " (Reminder: payment still due.)"}`;
+      return `${greeting} 🧺 Your dry cleaning order ${order.orderNumber} has been delivered back to ${order.colony}, Unit ${order.unitNumber}. Thanks for choosing Upstate Dry Cleaning!${order.paid ? "" : " (Reminder: payment still due.)"}`;
     case "missed":
       return `${greeting} We weren't able to pick up your order ${order.orderNumber} today. Please text us to reschedule — sorry for the inconvenience!`;
     default:
@@ -669,7 +669,7 @@ router.post("/webhook/twilio", async (req, res) => {
           updatedAt: new Date(),
         },
       });
-    res.send(twimlResponse("Welcome to Fresh Pick Dry Cleaning! 👔\n\nWhat is your full name?"));
+    res.send(twimlResponse("Welcome to Upstate Dry Cleaning! 👔\n\nWhat is your full name?"));
     return;
   }
 
