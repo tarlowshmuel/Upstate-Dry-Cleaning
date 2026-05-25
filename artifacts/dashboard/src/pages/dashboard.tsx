@@ -23,28 +23,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, Navigation } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-function parseItems(json: string | null | undefined): Record<string, number> {
-  if (!json) return {};
-  try { return JSON.parse(json) as Record<string, number>; }
-  catch { return {}; }
+function ItemsList({ text }: { text: string | null | undefined }) {
+  if (!text || !text.trim()) return <span className="text-muted-foreground/40 text-sm">—</span>;
+  return <span className="text-xs text-foreground">{text}</span>;
 }
 
-function ItemsList({ json }: { json: string | null | undefined }) {
-  const items = parseItems(json);
-  const entries = Object.entries(items).filter(([, qty]) => qty > 0);
-  if (entries.length === 0) return <span className="text-muted-foreground/40 text-sm">—</span>;
-  return (
-    <ul className="space-y-0.5">
-      {entries.map(([name, qty]) => (
-        <li key={name} className="text-xs text-foreground flex items-center gap-1.5">
-          <span className="font-semibold text-primary">{qty}×</span>
-          <span>{name}</span>
-        </li>
-      ))}
-    </ul>
-  );
+const DRIVER_START = "458 Riverside Drive, Sullivan County, NY";
+
+function buildRouteUrl(orders: Array<{ colonyAddress: string | null; colony: string; town: string }>): string {
+  const waypoints = orders
+    .map((o) => [o.colonyAddress, o.colony, o.town, "NY"].filter(Boolean).join(", "))
+    .map(encodeURIComponent)
+    .join("|");
+  const origin = encodeURIComponent(DRIVER_START);
+  const destination = encodeURIComponent(DRIVER_START);
+  return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
+}
+
+function todayDateString(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 const STATUSES = [
@@ -116,11 +120,16 @@ export default function Dashboard() {
     query: { queryKey: getListOrdersQueryKey() },
   });
 
+  const today = todayDateString();
+  const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
+  const routeUrl = todaysPickups.length > 0 ? buildRouteUrl(todaysPickups) : null;
+
   const counts = orders
     ? {
         pending: orders.filter((o) => o.status === "pending").length,
         picked_up: orders.filter((o) => o.status === "picked_up").length,
         total: orders.length,
+        todaysPickups: todaysPickups.length,
       }
     : null;
 
@@ -138,18 +147,33 @@ export default function Dashboard() {
               Dry cleaning pickup management
             </p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/60 border border-border/50 px-3 py-2 rounded-md font-mono">
-            <Phone className="w-3.5 h-3.5 text-primary" />
-            Text <span className="text-foreground font-semibold mx-1">"clean"</span> to your Twilio number to place an order
+          <div className="flex items-center gap-2 flex-wrap">
+            {routeUrl && (
+              <Button
+                asChild
+                size="sm"
+                className="gap-2"
+              >
+                <a href={routeUrl} target="_blank" rel="noopener noreferrer">
+                  <Navigation className="w-4 h-4" />
+                  Today's Route ({todaysPickups.length})
+                </a>
+              </Button>
+            )}
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/60 border border-border/50 px-3 py-2 rounded-md font-mono">
+              <Phone className="w-3.5 h-3.5 text-primary" />
+              Text <span className="text-foreground font-semibold mx-1">"clean"</span> to your Twilio number
+            </div>
           </div>
         </header>
 
         {/* Summary strip */}
         {counts && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
+              { label: "Today's Pickups", value: counts.todaysPickups, color: "text-primary" },
               { label: "Total Orders", value: counts.total, color: "text-foreground" },
-              { label: "Pending Pickup", value: counts.pending, color: "text-amber-600" },
+              { label: "Pending", value: counts.pending, color: "text-amber-600" },
               { label: "At Cleaners", value: counts.picked_up, color: "text-blue-600" },
             ].map((stat) => (
               <Card key={stat.label} className="border-border/50 shadow-sm">
@@ -202,7 +226,7 @@ export default function Dashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/60">
-                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Date"].map((h) => (
+                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Pickup"].map((h) => (
                         <TableHead key={h} className="font-medium text-xs uppercase tracking-wider text-muted-foreground py-3">
                           {h}
                         </TableHead>
@@ -258,10 +282,10 @@ export default function Dashboard() {
                         </TableCell>
 
                         {/* Items */}
-                        <TableCell className="py-4">
+                        <TableCell className="py-4 max-w-[200px]">
                           <div className="flex items-start gap-1.5">
                             <Package className="w-3 h-3 text-primary/60 mt-0.5 shrink-0" />
-                            <ItemsList json={order.items} />
+                            <ItemsList text={order.items} />
                           </div>
                         </TableCell>
 
@@ -285,15 +309,19 @@ export default function Dashboard() {
                           </div>
                         </TableCell>
 
-                        {/* Date */}
-                        <TableCell className="py-4 w-[120px]">
+                        {/* Pickup date */}
+                        <TableCell className="py-4 w-[140px]">
                           <div className="flex flex-col gap-0.5 items-start">
-                            <span className="text-sm font-medium text-foreground">
-                              {format(new Date(order.createdAt), "MMM d, yyyy")}
-                            </span>
+                            {order.pickupDate ? (
+                              <span className="text-sm font-medium text-foreground">
+                                {format(new Date(order.pickupDate + "T00:00:00"), "EEE, MMM d")}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground/60">—</span>
+                            )}
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Clock className="w-3 h-3 text-primary/60" />
-                              {format(new Date(order.createdAt), "h:mm a")}
+                              Ordered {format(new Date(order.createdAt), "MMM d")}
                             </span>
                           </div>
                         </TableCell>
@@ -312,14 +340,18 @@ export default function Dashboard() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Admin SMS Commands</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
-                { cmd: "today pickups", desc: "Today's pending orders" },
+                { cmd: "today pickups", desc: "Today's scheduled pickups" },
                 { cmd: "today returns", desc: "Orders at cleaners" },
-                { cmd: "pending", desc: "All pending" },
-                { cmd: "route", desc: "Today's route by town" },
+                { cmd: "pending", desc: "All pending orders" },
+                { cmd: "route", desc: "Today's route + Google Maps link" },
+                { cmd: "stats", desc: "All-time item totals" },
+                { cmd: "stats today", desc: "Items being picked up today" },
+                { cmd: "stats week", desc: "Items this past week" },
                 { cmd: "customer [id]", desc: "Order details" },
                 { cmd: "mark completed [id]", desc: "Mark picked up" },
                 { cmd: "mark paid [id]", desc: "Mark paid" },
                 { cmd: "missed [id]", desc: "Mark missed" },
+                { cmd: "help", desc: "List commands" },
               ].map(({ cmd, desc }) => (
                 <div key={cmd} className="flex flex-col gap-0.5">
                   <span className="font-mono text-xs text-foreground font-medium">{cmd}</span>

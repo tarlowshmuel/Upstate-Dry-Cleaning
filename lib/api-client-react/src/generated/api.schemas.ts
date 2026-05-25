@@ -23,6 +23,8 @@ export interface Order {
   gateAccess?: string | null;
   /** @nullable */
   items?: string | null;
+  /** @nullable */
+  pickupDate?: string | null;
   status: string;
   createdAt: string;
 }

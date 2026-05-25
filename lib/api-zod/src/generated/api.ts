@@ -30,6 +30,7 @@ export const ListOrdersResponseItem = zod.object({
   "unitNumber": zod.string(),
   "gateAccess": zod.string().nullish(),
   "items": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "createdAt": zod.coerce.date()
 })
@@ -58,6 +59,7 @@ export const UpdateOrderStatusResponse = zod.object({
   "unitNumber": zod.string(),
   "gateAccess": zod.string().nullish(),
   "items": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "createdAt": zod.coerce.date()
 })

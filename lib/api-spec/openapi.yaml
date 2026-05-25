@@ -97,6 +97,9 @@ components:
           type: ["string", "null"]
         items:
           type: ["string", "null"]
+        pickupDate:
+          type: ["string", "null"]
+          format: date
         status:
           type: string
         createdAt:
