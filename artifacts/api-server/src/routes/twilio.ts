@@ -809,4 +809,17 @@ router.post("/webhook/twilio", async (req, res) => {
   res.send(twimlResponse('Text "clean" to start a new pickup request.'));
 });
 
+// ─── Fallback Webhook ─────────────────────────────────────────────────────────
+// Twilio calls this if the primary webhook above fails (timeout, 5xx, etc.).
+// Returns a graceful message so the customer isn't left hanging.
+router.post("/webhook/twilio-fallback", (req, res) => {
+  res.setHeader("Content-Type", "text/xml");
+  res.send(
+    twimlResponse(
+      "Sorry, Upstate Dry Cleaning is having a temporary technical issue. " +
+      "Please try texting again in a few minutes, or call/text (845) 606-0022 directly. Thank you for your patience!"
+    )
+  );
+});
+
 export default router;
