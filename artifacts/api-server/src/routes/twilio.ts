@@ -633,6 +633,8 @@ function buildConfirmationSms(order: {
     ``,
     `⏰ Order cutoff: 12:00 AM the night before your pickup day.`,
     ``,
+    `💵 Payment: Cash or Zelle to (845) 606-0022 on delivery.`,
+    ``,
     `📋 Please have your items bagged and ready by 10:00 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`,
   ].join("\n");
 }
