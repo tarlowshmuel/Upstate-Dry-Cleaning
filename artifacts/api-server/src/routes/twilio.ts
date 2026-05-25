@@ -184,13 +184,48 @@ const ADMIN_MAIN_MENU = [
   "2. Orders at cleaners",
   "3. Pending orders",
   "4. Unpaid orders",
-  "5. Today's route (driving order)",
-  "6. Stats",
-  "7. Look up an order",
-  "8. Update an order",
+  "5. Missed pickups",
+  "6. Route (pick any day)",
+  "7. Stats",
+  "8. Look up an order",
+  "9. Update an order",
+  "10. New order",
   "",
+  'Tip: "sort newest|oldest|pickup|name" · "range today|week|all"',
   'Reply with a number (or "menu" anytime).',
 ].join("\n");
+
+// ─── Admin preferences (sort / time range) ────────────────────────────────────
+// In-memory because admin is a single user; resets on restart, which is fine.
+type SortKey = "newest" | "oldest" | "pickup-asc" | "name";
+type RangeKey = "today" | "week" | "all";
+interface AdminPrefs { sort: SortKey; range: RangeKey }
+const adminPrefs = new Map<string, AdminPrefs>();
+function getPrefs(phone: string): AdminPrefs {
+  let p = adminPrefs.get(phone);
+  if (!p) { p = { sort: "newest", range: "all" }; adminPrefs.set(phone, p); }
+  return p;
+}
+function sortOrders(orders: OrderRow[], sort: SortKey): OrderRow[] {
+  const arr = [...orders];
+  switch (sort) {
+    case "newest":     return arr.sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+    case "oldest":     return arr.sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0));
+    case "pickup-asc": return arr.sort((a, b) => (a.pickupDate ?? "").localeCompare(b.pickupDate ?? ""));
+    case "name":       return arr.sort((a, b) => a.name.localeCompare(b.name));
+  }
+}
+function rangeWhereClause(range: RangeKey) {
+  if (range === "today") return eq(ordersTable.pickupDate, toDateOnly(new Date()));
+  if (range === "week") {
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0, 0, 0, 0);
+    return gte(ordersTable.createdAt, weekAgo);
+  }
+  return undefined;
+}
+function prefsBadge(p: AdminPrefs): string {
+  return `[sort=${p.sort} · range=${p.range}]`;
+}
 
 const ADMIN_STATS_MENU = [
   "📊 STATS — pick a range:",
@@ -229,42 +264,142 @@ async function setAdminStep(phone: string, step: string, scratch: string | null 
 }
 
 // ─── Admin Actions (data fetchers) ─────────────────────────────────────────────
-async function actionTodayPickups(): Promise<string> {
+async function actionTodayPickups(prefs: AdminPrefs): Promise<string> {
   const today = toDateOnly(new Date());
   const orders = await db
     .select().from(ordersTable)
-    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)))
-    .orderBy(ordersTable.town);
+    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)));
   if (orders.length === 0) return "No pickups scheduled for today.";
-  return `TODAY'S PICKUPS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+  const sorted = sortOrders(orders, prefs.sort);
+  return `TODAY'S PICKUPS (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
 }
 
-async function actionTodayReturns(): Promise<string> {
+async function actionTodayReturns(prefs: AdminPrefs): Promise<string> {
   const orders = await db
     .select().from(ordersTable)
-    .where(eq(ordersTable.status, "picked_up"))
-    .orderBy(ordersTable.town);
+    .where(eq(ordersTable.status, "picked_up"));
   if (orders.length === 0) return "No returns scheduled.";
-  return `RETURNS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+  const sorted = sortOrders(orders, prefs.sort);
+  return `RETURNS (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
 }
 
-async function actionPending(): Promise<string> {
+async function actionPending(prefs: AdminPrefs): Promise<string> {
+  const baseWhere = eq(ordersTable.status, "pending");
+  const rangeWhere = rangeWhereClause(prefs.range);
   const orders = await db
     .select().from(ordersTable)
-    .where(eq(ordersTable.status, "pending"))
-    .orderBy(desc(ordersTable.createdAt));
-  if (orders.length === 0) return "No pending orders.";
-  return `PENDING (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+    .where(rangeWhere ? and(baseWhere, rangeWhere) : baseWhere);
+  if (orders.length === 0) return `No pending orders ${prefsBadge(prefs)}.`;
+  const sorted = sortOrders(orders, prefs.sort);
+  return `PENDING (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
 }
 
-async function actionUnpaid(): Promise<string> {
+async function actionUnpaid(prefs: AdminPrefs): Promise<string> {
+  const baseWhere = eq(ordersTable.paid, false);
+  const rangeWhere = rangeWhereClause(prefs.range);
   const orders = await db
     .select().from(ordersTable)
-    .where(eq(ordersTable.paid, false))
-    .orderBy(desc(ordersTable.createdAt));
-  if (orders.length === 0) return "All orders are paid. 🎉";
-  return `UNPAID (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
+    .where(rangeWhere ? and(baseWhere, rangeWhere) : baseWhere);
+  if (orders.length === 0) return `All orders paid 🎉 ${prefsBadge(prefs)}.`;
+  const sorted = sortOrders(orders, prefs.sort);
+  return `UNPAID (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
 }
+
+// ─── Missed pickups ───────────────────────────────────────────────────────────
+// Any pending order whose pickup date is today-or-earlier counts as at-risk.
+async function actionMissed(): Promise<{ message: string; ids: string }> {
+  const today = toDateOnly(new Date());
+  const orders = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.status, "pending"), sql`${ordersTable.pickupDate} <= ${today}`))
+    .orderBy(ordersTable.pickupDate);
+  if (orders.length === 0) {
+    return { message: "✅ No missed pickups.\n\n0. Back to menu", ids: "" };
+  }
+  const lines = orders.map((o, i) =>
+    `${i + 1}. ${o.orderNumber} — ${o.name} · ${o.colony}, ${o.town} (pickup ${o.pickupDate})`
+  ).join("\n");
+  return {
+    message:
+      `🚨 MISSED / AT-RISK (${orders.length}):\n\n${lines}\n\n` +
+      `Reply with numbers to mark missed (e.g. "1,3"), "all" for everything, or "0" to cancel.\n` +
+      `(Customers will be auto-notified to reschedule.)`,
+    ids: orders.map((o) => o.id).join(","),
+  };
+}
+async function actionMarkMissedBatch(ids: number[]): Promise<string> {
+  let ok = 0, skipped = 0;
+  for (const id of ids) {
+    // Conditional update — only flip orders that are still pending. Avoids
+    // regressing orders that moved on (picked_up/delivered) since the list
+    // was generated.
+    const updated = await db.update(ordersTable)
+      .set({ status: "missed" })
+      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "pending")))
+      .returning();
+    if (updated.length === 0) { skipped++; continue; }
+    const o = updated[0]!;
+    const msg = customerStatusMessage(o, "missed");
+    if (msg) await notifyCustomer(o, msg);
+    ok++;
+  }
+  return `✅ Marked ${ok} order${ok !== 1 ? "s" : ""} missed; customer${ok !== 1 ? "s" : ""} notified.` +
+         (skipped ? ` (${skipped} skipped — already updated since list was generated)` : "");
+}
+
+// ─── Route day picker ─────────────────────────────────────────────────────────
+function buildRouteDayMenu(): { message: string; dates: string[] } {
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const lines: string[] = ["🚚 ROUTE — pick a day:", ""];
+  const dates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const label = `${wd[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}${i === 0 ? " (Today)" : ""}`;
+    lines.push(`${i + 1}. ${label}`);
+    dates.push(toDateOnly(d));
+  }
+  lines.push("", "0. Back to menu");
+  return { message: lines.join("\n"), dates };
+}
+async function actionRouteForDate(date: string): Promise<string> {
+  const orders = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
+  if (orders.length === 0) return `No pickups for ${date}.`;
+  const { computeOptimizedRoute } = await import("../lib/route-service");
+  const route = await computeOptimizedRoute(orders);
+  let msg = `🚚 ROUTE — ${date} — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
+  if (route.totalDistanceMiles > 0) msg += ` · ~${route.totalDistanceMiles} mi`;
+  msg += `\nStart: ${DRIVER_START}\n`;
+  route.stops.forEach((s, i) => {
+    const oh = orders.filter((o) => s.orderIds.includes(o.id));
+    msg += `\n${i + 1}. ${s.colony}${s.addressHint ? ` (${s.addressHint})` : ""}, ${s.town}\n`;
+    oh.forEach((o) => {
+      const gate = o.gateAccess ? ` · Gate ${o.gateAccess}` : "";
+      msg += `   • Unit ${o.unitNumber} — ${o.name}${gate}\n     📞 ${o.phoneNumber}\n`;
+    });
+  });
+  msg += `\nEnd: ${DRIVER_END}`;
+  if (route.warnings.length > 0) msg += `\n\n⚠️ ${route.warnings.join("; ")}`;
+  return msg;
+}
+
+// ─── New-order (admin-initiated) flow scratch ─────────────────────────────────
+// Multi-step state stashed as JSON in conversationsTable.items.
+interface NewOrderScratch {
+  phone?: string;
+  name?: string;
+  town?: string;
+  colony?: string;
+  address?: string;
+  unit?: string;
+  gate?: string | null;
+  items?: string;
+}
+function readScratch(s: string | null): NewOrderScratch {
+  if (!s) return {};
+  try { return JSON.parse(s) as NewOrderScratch; } catch { return {}; }
+}
+function writeScratch(o: NewOrderScratch): string { return JSON.stringify(o); }
 
 async function actionRoute(): Promise<string> {
   const today = toDateOnly(new Date());
@@ -511,6 +646,23 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     return ADMIN_MAIN_MENU;
   }
 
+  // ── Inline sort/range commands — usable from any state ────────────────────
+  const sortMatch = text.match(/^sort\s+(newest|oldest|pickup|name)$/);
+  if (sortMatch) {
+    const map: Record<string, SortKey> = {
+      newest: "newest", oldest: "oldest", pickup: "pickup-asc", name: "name",
+    };
+    getPrefs(from).sort = map[sortMatch[1]!]!;
+    await setAdminStep(from, "admin_main");
+    return `✅ Sort set to ${sortMatch[1]}.\n\n${ADMIN_MAIN_MENU}`;
+  }
+  const rangeMatch = text.match(/^range\s+(today|week|all)$/);
+  if (rangeMatch) {
+    getPrefs(from).range = rangeMatch[1] as RangeKey;
+    await setAdminStep(from, "admin_main");
+    return `✅ Range set to ${rangeMatch[1]}.\n\n${ADMIN_MAIN_MENU}`;
+  }
+
   // Load admin session (if any)
   const [session] = await db
     .select().from(conversationsTable)
@@ -640,41 +792,166 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
+  // ── Missed pickups: batch-mark selection ──────────────────────────────────
+  if (step === "admin_missed_pick") {
+    const ids = (session?.items ?? "").split(",").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+    let picks: number[] = [];
+    if (text === "all") {
+      picks = ids;
+    } else {
+      const nums = text.split(/[,\s]+/).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+      for (const n of nums) {
+        if (n >= 1 && n <= ids.length) picks.push(ids[n - 1]!);
+      }
+    }
+    if (picks.length === 0) {
+      return `Reply with numbers (e.g. "1,3"), "all", or "0" to cancel.`;
+    }
+    const result = await actionMarkMissedBatch(picks);
+    await setAdminStep(from, "admin_main");
+    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Route day picker ──────────────────────────────────────────────────────
+  if (step === "admin_route_pick_day") {
+    const dates = (session?.items ?? "").split(",").filter(Boolean);
+    if (!/^\d+$/.test(text)) return `Please reply 1-${dates.length}, or "0" to go back.`;
+    const pick = parseInt(text, 10);
+    if (pick < 1 || pick > dates.length) return `Please reply 1-${dates.length}, or "0" to go back.`;
+    const date = dates[pick - 1]!;
+    const result = await actionRouteForDate(date);
+    await setAdminStep(from, "admin_main");
+    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── New order flow (admin-initiated) ──────────────────────────────────────
+  if (step?.startsWith("admin_new_")) {
+    const scratch = readScratch(session?.items ?? null);
+
+    if (step === "admin_new_phone") {
+      const digits = raw.replace(/[^\d+]/g, "");
+      if (!/^\+?\d{10,15}$/.test(digits)) {
+        return `Please send a valid phone (e.g. +19293450940), or "0" to cancel.`;
+      }
+      scratch.phone = digits.startsWith("+") ? digits : `+1${digits.replace(/^1/, "")}`;
+      await setAdminStep(from, "admin_new_name", writeScratch(scratch));
+      return `📛 Customer name?`;
+    }
+    if (step === "admin_new_name") {
+      scratch.name = raw;
+      await setAdminStep(from, "admin_new_town", writeScratch(scratch));
+      return `🏘️ Which town?\n\n${townList()}`;
+    }
+    if (step === "admin_new_town") {
+      const n = parseInt(text, 10);
+      if (isNaN(n) || n < 1 || n > TOWNS.length) {
+        return `Reply 1-${TOWNS.length}.\n\n${townList()}`;
+      }
+      scratch.town = TOWNS[n - 1]!;
+      await setAdminStep(from, "admin_new_colony", writeScratch(scratch));
+      return `🏢 Colony / neighborhood name?`;
+    }
+    if (step === "admin_new_colony") {
+      scratch.colony = raw;
+      await setAdminStep(from, "admin_new_location", writeScratch(scratch));
+      return `📍 Address details — 3 lines:\n\n1. Street address\n2. Unit / house number\n3. Gate code (or skip)\n\nExample:\n458 Riverside Dr\nUnit 50\n1234#`;
+    }
+    if (step === "admin_new_location") {
+      const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+      if (lines.length < 2) return `Need at least 2 lines (street, unit). Try again or "0" to cancel.`;
+      const [street, unit, gate] = lines;
+      scratch.address = street!;
+      scratch.unit = unit!;
+      scratch.gate = !gate || /^(none|no|skip)$/i.test(gate) ? null : gate;
+      await setAdminStep(from, "admin_new_items", writeScratch(scratch));
+      return `📦 Items? (e.g. "2 suits, 3 shirts" — or "skip")`;
+    }
+    if (step === "admin_new_items") {
+      scratch.items = /^(skip|none|no)$/i.test(text) ? undefined : raw;
+      await setAdminStep(from, "admin_new_notes", writeScratch(scratch));
+      return `📝 Any notes for the driver? (or "skip")`;
+    }
+    if (step === "admin_new_notes") {
+      const notes = /^(skip|none|no)$/i.test(text) ? null : raw;
+      const pickup = nextPickupDate(scratch.town!);
+      if (!pickup) {
+        await setAdminStep(from, "admin_main");
+        return `❌ No service schedule for ${scratch.town}.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      const orderNumber = await nextOrderNumber();
+      await db.insert(ordersTable).values({
+        orderNumber,
+        phoneNumber: scratch.phone!,
+        name: scratch.name!,
+        town: scratch.town!,
+        colony: scratch.colony!,
+        colonyAddress: scratch.address ?? null,
+        unitNumber: scratch.unit!,
+        gateAccess: scratch.gate ?? null,
+        items: scratch.items ?? null,
+        notes,
+        pickupDate: toDateOnly(pickup),
+        status: "pending",
+      });
+      await setAdminStep(from, "admin_main");
+      return [
+        `✅ Order ${orderNumber} created for ${scratch.name}.`,
+        `📍 ${scratch.colony}, Unit ${scratch.unit} · ${scratch.town}`,
+        `📅 Pickup: ${formatLongDate(pickup)}`,
+        `📞 ${scratch.phone}`,
+        ``,
+        `———`,
+        ``,
+        ADMIN_MAIN_MENU,
+      ].join("\n");
+    }
+  }
+
   // ── Main menu (default) ────────────────────────────────────────────────────
-  // If no session or at main menu, treat input as menu choice
+  const prefs = getPrefs(from);
   switch (text) {
     case "1": {
       await setAdminStep(from, "admin_main");
-      return `${await actionTodayPickups()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      return `${await actionTodayPickups(prefs)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
     case "2": {
       await setAdminStep(from, "admin_main");
-      return `${await actionTodayReturns()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      return `${await actionTodayReturns(prefs)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
     case "3": {
       await setAdminStep(from, "admin_main");
-      return `${await actionPending()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      return `${await actionPending(prefs)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
     case "4": {
       await setAdminStep(from, "admin_main");
-      return `${await actionUnpaid()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      return `${await actionUnpaid(prefs)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
     case "5": {
-      await setAdminStep(from, "admin_main");
-      return `${await actionRoute()}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      const { message, ids } = await actionMissed();
+      await setAdminStep(from, ids ? "admin_missed_pick" : "admin_main", ids);
+      return message;
     }
     case "6": {
+      const { message, dates } = buildRouteDayMenu();
+      await setAdminStep(from, "admin_route_pick_day", dates.join(","));
+      return message;
+    }
+    case "7": {
       await setAdminStep(from, "admin_stats");
       return ADMIN_STATS_MENU;
     }
-    case "7": {
+    case "8": {
       await setAdminStep(from, "admin_lookup");
       return `🔍 Search for an order — reply with any of:\n  • Customer name (e.g. "Sarah")\n  • Phone digits (e.g. "9293450")\n  • Order ID (e.g. "5")\n  • Order # (e.g. "DRY-12345")\n\n0. Back to menu`;
     }
-    case "8": {
+    case "9": {
       const { message, ids } = await actionUpdateBrowse();
       await setAdminStep(from, "admin_update_browse", ids);
       return message;
+    }
+    case "10": {
+      await setAdminStep(from, "admin_new_phone", writeScratch({}));
+      return `📱 NEW ORDER — what's the customer's phone? (e.g. +19293450940)\n\n0. Cancel`;
     }
     default:
       await setAdminStep(from, "admin_main");
@@ -855,6 +1132,119 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
     .select().from(conversationsTable)
     .where(eq(conversationsTable.phoneNumber, from))
     .limit(1);
+
+  // ── Reschedule flow: pick a new pickup day for a missed order ────────────
+  // Triggered when a customer with a missed order texts back. We don't intercept
+  // if they're already mid-order-flow (returning_confirm/name/town/etc.).
+  const orderFlowSteps = new Set([
+    "returning_confirm", "name", "town", "colony", "location_details", "notes",
+  ]);
+  if (!convo || !orderFlowSteps.has(convo.step ?? "")) {
+    if (convo?.step === "reschedule_offer") {
+      if (text === "yes" || text === "y" || text === "reschedule") {
+        // Bind to the SPECIFIC order id captured when we sent the offer, not
+        // "latest missed" — otherwise a newer missed order would silently
+        // hijack the reschedule.
+        const offeredId = parseInt(convo.items ?? "", 10);
+        const [missed] = isNaN(offeredId)
+          ? [undefined]
+          : await db.select().from(ordersTable)
+              .where(and(
+                eq(ordersTable.id, offeredId),
+                eq(ordersTable.phoneNumber, from),
+                eq(ordersTable.status, "missed"),
+              )).limit(1);
+        if (!missed) {
+          await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+          res.send(twimlResponse(`Sorry, that order is no longer eligible to reschedule. Text "clean" to start a new one.`));
+          return;
+        }
+        const choices: { date: Date; label: string }[] = [];
+        let cursor = new Date();
+        for (let i = 0; i < 3; i++) {
+          const next = nextPickupDate(missed.town, cursor);
+          if (!next) break;
+          choices.push({ date: next, label: formatLongDate(next) });
+          cursor = new Date(next); cursor.setDate(cursor.getDate() + 1);
+        }
+        if (choices.length === 0) {
+          res.send(twimlResponse(`Sorry, we don't have a pickup schedule for ${missed.town}. Please call (845) 606-0022.`));
+          return;
+        }
+        const lines = choices.map((c, i) => `${i + 1}. ${c.label}`).join("\n");
+        const dates = choices.map((c) => toDateOnly(c.date)).join(",");
+        await db.update(conversationsTable)
+          .set({ step: "reschedule_pick", items: `${missed.id}|${dates}`, updatedAt: new Date() })
+          .where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`Great! Pick a new pickup day for order ${missed.orderNumber}:\n\n${lines}\n\nReply with a number, or "cancel" to skip.`));
+        return;
+      }
+      if (text === "no" || text === "n" || text === "cancel") {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`No problem. Text "clean" anytime to place a new order.`));
+        return;
+      }
+      res.send(twimlResponse(`Reply YES to pick a new pickup day, or NO to skip.`));
+      return;
+    }
+    if (convo?.step === "reschedule_pick") {
+      if (text === "cancel" || text === "no") {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`Cancelled. Text "clean" anytime to place a new order.`));
+        return;
+      }
+      const [idStr, dateCsv] = (convo.items ?? "").split("|");
+      const orderId = parseInt(idStr ?? "", 10);
+      const dates = (dateCsv ?? "").split(",").filter(Boolean);
+      const pick = parseInt(text, 10);
+      if (isNaN(pick) || pick < 1 || pick > dates.length) {
+        res.send(twimlResponse(`Please reply with a number 1-${dates.length}, or "cancel".`));
+        return;
+      }
+      const newDate = dates[pick - 1]!;
+      // Conditional update: only flip if the order is still missed and still
+      // owned by this phone — guards against a stale conversation reviving an
+      // order that was already handled in the dashboard.
+      const updated = await db.update(ordersTable)
+        .set({ status: "pending", pickupDate: newDate })
+        .where(and(
+          eq(ordersTable.id, orderId),
+          eq(ordersTable.phoneNumber, from),
+          eq(ordersTable.status, "missed"),
+        ))
+        .returning();
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      if (updated.length === 0) {
+        res.send(twimlResponse(`Sorry, that order can no longer be rescheduled (it may have been updated). Text "clean" to start a new order.`));
+        return;
+      }
+      res.send(twimlResponse(`✅ Rescheduled! Your new pickup is ${formatLongDate(new Date(newDate + "T00:00:00"))}. Please have your bag out by 10:00 AM. Thanks!`));
+      return;
+    }
+
+    // Not already in a reschedule conversation — offer one if a missed order exists.
+    if (text !== "clean") {
+      const [missed] = await db.select().from(ordersTable)
+        .where(and(eq(ordersTable.phoneNumber, from), eq(ordersTable.status, "missed")))
+        .orderBy(desc(ordersTable.id)).limit(1);
+      if (missed) {
+        // Persist the offered order id in items so the YES branch binds to
+        // the same order, not whatever "latest missed" happens to be then.
+        await db.insert(conversationsTable)
+          .values({ phoneNumber: from, step: "reschedule_offer", items: String(missed.id) })
+          .onConflictDoUpdate({
+            target: conversationsTable.phoneNumber,
+            set: { step: "reschedule_offer", items: String(missed.id), updatedAt: new Date() },
+          });
+        res.send(twimlResponse(
+          `Hi! We missed picking up your order ${missed.orderNumber}. ` +
+          `Would you like to reschedule it for the next pickup day?\n\n` +
+          `Reply YES to pick a new day, or text "clean" to start a brand-new order.`
+        ));
+        return;
+      }
+    }
+  }
 
   if (!convo) {
     res.send(twimlResponse('Text "clean" to start a dry cleaning pickup request.'));

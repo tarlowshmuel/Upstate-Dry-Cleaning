@@ -1,0 +1,1 @@
+- [SMS state-machine writes](sms-state-writes.md) — multi-turn SMS flows must bind to an entity id at offer time and gate the final write on `(id, owner, expected_status)`, not "latest matching row".
