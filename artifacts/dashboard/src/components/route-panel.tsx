@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,12 +104,16 @@ interface DayOption {
   label: string;
   sub: string;
   isToday: boolean;
+  weekIndex: number;
 }
 
 function buildDayOptions(): DayOption[] {
   const days: DayOption[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // Anchor week 0 to the Sunday on or before today.
+  const weekAnchor = new Date(today);
+  weekAnchor.setDate(today.getDate() - today.getDay());
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   // Walk forward up to 14 days to collect the next 7 operating days (Mon–Thu).
   for (let i = 0; i < 14 && days.length < 7; i++) {
@@ -117,11 +121,13 @@ function buildDayOptions(): DayOption[] {
     d.setDate(today.getDate() + i);
     const dow = d.getDay();
     if (!OPERATING_DAYS.has(dow)) continue;
+    const daysFromAnchor = Math.round((d.getTime() - weekAnchor.getTime()) / 86_400_000);
     days.push({
       date: toDateOnly(d),
       label: weekdays[dow]!,
       sub: `${d.getMonth() + 1}/${d.getDate()}`,
       isToday: i === 0,
+      weekIndex: Math.floor(daysFromAnchor / 7),
     });
   }
   return days;
@@ -177,26 +183,38 @@ export function RoutePanel() {
   );
 
   const daySelector = (
-    <div className="flex flex-wrap gap-1.5">
-      {dayOptions.map((d) => {
+    <div className="flex flex-wrap items-stretch gap-1.5">
+      {dayOptions.map((d, i) => {
         const active = d.date === selectedDate;
+        const prev = dayOptions[i - 1];
+        const showDivider = prev && prev.weekIndex !== d.weekIndex;
         return (
-          <button
-            key={d.date}
-            type="button"
-            onClick={() => setSelectedDate(d.date)}
-            className={cn(
-              "px-2.5 py-1.5 rounded-md border text-xs font-medium leading-tight flex flex-col items-center min-w-12 transition-colors",
-              active
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-card hover:bg-muted border-border text-foreground",
+          <Fragment key={d.date}>
+            {showDivider && (
+              <div className="flex items-center gap-1.5 px-1" aria-hidden="true">
+                <div className="h-8 w-px bg-border" />
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Next week
+                </span>
+                <div className="h-8 w-px bg-border" />
+              </div>
             )}
-          >
-            <span>{d.label}</span>
-            <span className={cn("text-[10px]", active ? "opacity-90" : "text-muted-foreground")}>
-              {d.sub}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(d.date)}
+              className={cn(
+                "px-2.5 py-1.5 rounded-md border text-xs font-medium leading-tight flex flex-col items-center min-w-12 transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card hover:bg-muted border-border text-foreground",
+              )}
+            >
+              <span>{d.label}</span>
+              <span className={cn("text-[10px]", active ? "opacity-90" : "text-muted-foreground")}>
+                {d.sub}
+              </span>
+            </button>
+          </Fragment>
         );
       })}
     </div>
