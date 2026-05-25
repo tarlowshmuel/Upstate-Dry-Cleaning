@@ -318,6 +318,22 @@ export function RoutePanel() {
             </div>
           </div>
         )}
+        {collapsed && (
+          <ol className="flex flex-wrap gap-1.5">
+            {data.stops.map((stop) => (
+              <li
+                key={`mini-${stop.town}-${stop.colony}`}
+                className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs"
+              >
+                <span className="inline-flex w-5 h-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                  {stop.index}
+                </span>
+                <span className="font-medium">{stop.colony}</span>
+                <span className="text-muted-foreground">· {stop.town}</span>
+              </li>
+            ))}
+          </ol>
+        )}
         {!collapsed && (
         <>
         <div className="text-xs text-muted-foreground font-mono">
