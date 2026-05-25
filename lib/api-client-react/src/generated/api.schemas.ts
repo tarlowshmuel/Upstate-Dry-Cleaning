@@ -16,9 +16,16 @@ export interface Order {
   name: string;
   town: string;
   colony: string;
+  /** @nullable */
+  colonyAddress?: string | null;
   unitNumber: string;
+  /** @nullable */
   gateAccess?: string | null;
   status: string;
   createdAt: string;
+}
+
+export interface OrderStatusUpdate {
+  status: string;
 }
 

@@ -9,7 +9,6 @@ import * as zod from 'zod';
 
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -27,11 +26,38 @@ export const ListOrdersResponseItem = zod.object({
   "name": zod.string(),
   "town": zod.string(),
   "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
   "unitNumber": zod.string(),
   "gateAccess": zod.string().nullish(),
   "status": zod.string(),
   "createdAt": zod.coerce.date()
 })
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem)
+
+
+/**
+ * @summary Update order status
+ */
+export const UpdateOrderStatusParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateOrderStatusBody = zod.object({
+  "status": zod.string()
+})
+
+export const UpdateOrderStatusResponse = zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "phoneNumber": zod.string(),
+  "name": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date()
+})
 
 
