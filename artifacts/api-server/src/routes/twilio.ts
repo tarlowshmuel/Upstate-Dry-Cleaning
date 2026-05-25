@@ -8,18 +8,23 @@ import { nextOrderNumber } from "../lib/order-number";
 const router = Router();
 
 // ─── Towns + Schedule ─────────────────────────────────────────────────────────
+// Corridor-based split: Monday handles the Rt 42 south corridor (tight cluster
+// around Fallsburg), Tuesday handles the Rt 17 west / Liberty corridor.
+// Drop-off is always pickup + 2 days.
 const TOWN_SCHEDULE: Record<string, { pickup: string; dropoff: string }> = {
-  "Monticello":       { pickup: "Monday",  dropoff: "Wednesday" },
+  // ── Monday: Rt 42 south corridor ──────────────────────────────────────────
+  "Fallsburg":        { pickup: "Monday",  dropoff: "Wednesday" },
   "South Fallsburg":  { pickup: "Monday",  dropoff: "Wednesday" },
+  "Woodbourne":       { pickup: "Monday",  dropoff: "Wednesday" },
+  "Loch Sheldrake":   { pickup: "Monday",  dropoff: "Wednesday" },
+  "Hurleyville":      { pickup: "Monday",  dropoff: "Wednesday" },
   "Woodridge":        { pickup: "Monday",  dropoff: "Wednesday" },
   "Glen Wild":        { pickup: "Monday",  dropoff: "Wednesday" },
-  "Fallsburg":        { pickup: "Monday",  dropoff: "Wednesday" },
-  "Hurleyville":      { pickup: "Monday",  dropoff: "Wednesday" },
-  "Woodbourne":       { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Loch Sheldrake":   { pickup: "Tuesday", dropoff: "Thursday"  },
-  "Liberty":          { pickup: "Tuesday", dropoff: "Thursday"  },
+  // ── Tuesday: Rt 17 west / Liberty corridor ────────────────────────────────
+  "Monticello":       { pickup: "Tuesday", dropoff: "Thursday"  },
   "Kiamesha Lake":    { pickup: "Tuesday", dropoff: "Thursday"  },
   "Ferndale":         { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Liberty":          { pickup: "Tuesday", dropoff: "Thursday"  },
   "Parksville":       { pickup: "Tuesday", dropoff: "Thursday"  },
   "Livingston Manor": { pickup: "Tuesday", dropoff: "Thursday"  },
   "Dairyland":        { pickup: "Tuesday", dropoff: "Thursday"  },
@@ -27,9 +32,10 @@ const TOWN_SCHEDULE: Record<string, { pickup: string; dropoff: string }> = {
 
 const TOWNS = Object.keys(TOWN_SCHEDULE);
 
-// Driving order from Fallsburg through Sullivan County and back.
-// Monday set: Fallsburg → South Fallsburg → Hurleyville → Woodridge → Glen Wild → Monticello.
-// Tuesday set: Woodbourne → Loch Sheldrake → Kiamesha Lake → Liberty → Ferndale → Parksville → Livingston Manor → Dairyland.
+// Driving order within each corridor — kept here so the route view can sort
+// stops in the order the driver actually visits them.
+// Monday (Rt 42): Fallsburg → South Fallsburg → Woodbourne → Loch Sheldrake → Hurleyville → Woodridge → Glen Wild.
+// Tuesday (Rt 17): Monticello → Kiamesha Lake → Ferndale → Liberty → Parksville → Livingston Manor → Dairyland.
 const TOWN_ROUTE_ORDER: string[] = [
   "Fallsburg",
   "South Fallsburg",
@@ -38,8 +44,8 @@ const TOWN_ROUTE_ORDER: string[] = [
   "Hurleyville",
   "Woodridge",
   "Glen Wild",
-  "Kiamesha Lake",
   "Monticello",
+  "Kiamesha Lake",
   "Ferndale",
   "Liberty",
   "Parksville",
