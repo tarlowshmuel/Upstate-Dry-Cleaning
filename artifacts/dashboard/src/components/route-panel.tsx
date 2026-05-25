@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Navigation, MapPin, Phone, Key, Package, AlertTriangle, Route as RouteIcon } from "lucide-react";
+import { Navigation, MapPin, Phone, Key, Package, AlertTriangle, Route as RouteIcon, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
@@ -146,6 +146,7 @@ export function RoutePanel() {
   const dayOptions = useMemo(buildDayOptions, []);
   const [selectedDate, setSelectedDate] = useState<string>(dayOptions[0]!.date);
   const [direction, setDirection] = useState<Direction>("pickup");
+  const [collapsed, setCollapsed] = useState(false);
   const selectedOption = dayOptions.find((d) => d.date === selectedDate) ?? dayOptions[0]!;
 
   const { data, isLoading, isError } = useQuery({
@@ -289,6 +290,18 @@ export function RoutePanel() {
       {headerBlock}
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setCollapsed((c) => !c)}
+            className="h-7 px-2 -ml-1 gap-1 text-xs font-medium"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand route list" : "Collapse route list"}
+          >
+            {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {collapsed ? "Show stops" : "Hide stops"}
+          </Button>
           <Badge variant="secondary">{data.stops.length} stop{data.stops.length !== 1 ? "s" : ""}</Badge>
           <Badge variant="secondary">{totalOrders} order{totalOrders !== 1 ? "s" : ""}</Badge>
           {data.totalDistanceMiles > 0 && (
@@ -305,6 +318,8 @@ export function RoutePanel() {
             </div>
           </div>
         )}
+        {!collapsed && (
+        <>
         <div className="text-xs text-muted-foreground font-mono">
           Start: {data.start.address}
         </div>
@@ -389,6 +404,8 @@ export function RoutePanel() {
         <div className="text-xs text-muted-foreground font-mono">
           End: {data.end.address}
         </div>
+        </>
+        )}
       </CardContent>
     </Card>
   );
