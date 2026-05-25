@@ -34,6 +34,24 @@ export interface Order {
   createdAt: string;
 }
 
+export interface CreateOrderInput {
+  name: string;
+  phoneNumber: string;
+  town: string;
+  colony: string;
+  /** @nullable */
+  colonyAddress?: string | null;
+  unitNumber: string;
+  /** @nullable */
+  gateAccess?: string | null;
+  /** @nullable */
+  items?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  pickupDate?: string | null;
+}
+
 export interface OrderStatusUpdate {
   status: string;
 }

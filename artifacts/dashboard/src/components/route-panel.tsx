@@ -42,6 +42,48 @@ interface RouteResponse {
   warnings: string[];
 }
 
+interface UnitGroup {
+  unitNumber: string;
+  name: string;
+  phoneNumber: string;
+  gateAccess: string | null;
+  items: string[];
+  notes: string[];
+  orders: StopOrder[];
+}
+
+function groupByUnit(orders: StopOrder[]): UnitGroup[] {
+  // Group by unit + phone so multi-contact units (rare, but possible) aren't
+  // collapsed into a single dispatcher contact.
+  const map = new Map<string, UnitGroup>();
+  for (const o of orders) {
+    const key = `${o.unitNumber.trim().toLowerCase()}|${o.phoneNumber.trim()}`;
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        unitNumber: o.unitNumber,
+        name: o.name,
+        phoneNumber: o.phoneNumber,
+        gateAccess: o.gateAccess,
+        items: [],
+        notes: [],
+        orders: [],
+      };
+      map.set(key, g);
+    }
+    g.orders.push(o);
+    if (o.items) g.items.push(o.items);
+    if (o.notes) g.notes.push(o.notes);
+    if (!g.gateAccess && o.gateAccess) g.gateAccess = o.gateAccess;
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    const an = parseInt(a.unitNumber.replace(/\D/g, ""), 10);
+    const bn = parseInt(b.unitNumber.replace(/\D/g, ""), 10);
+    if (!isNaN(an) && !isNaN(bn)) return an - bn;
+    return a.unitNumber.localeCompare(b.unitNumber);
+  });
+}
+
 async function fetchRoute(): Promise<RouteResponse> {
   const res = await fetch(`${API_BASE}/route/today`, { credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch route");
@@ -165,34 +207,49 @@ export function RoutePanel() {
                     </div>
                   )}
                   <ul className="mt-2 space-y-1.5">
-                    {stop.orders.map((o) => (
-                      <li key={o.id} className="text-sm flex flex-col gap-0.5 pl-2 border-l-2 border-primary/30">
+                    {groupByUnit(stop.orders).map((group) => (
+                      <li
+                        key={group.unitNumber}
+                        className="text-sm flex flex-col gap-0.5 pl-2 border-l-2 border-primary/30"
+                      >
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">Unit {o.unitNumber}</span>
-                          <span className="text-muted-foreground">— {o.name}</span>
+                          <span className="font-medium">Unit {group.unitNumber}</span>
+                          <span className="text-muted-foreground">— {group.name}</span>
+                          {group.orders.length > 1 && (
+                            <Badge variant="outline" className="text-xs">
+                              {group.orders.length} orders
+                            </Badge>
+                          )}
                           <a
-                            href={`tel:${o.phoneNumber}`}
+                            href={`tel:${group.phoneNumber}`}
                             className="text-xs text-muted-foreground inline-flex items-center gap-1 hover:text-primary"
                           >
                             <Phone className="w-3 h-3" />
-                            {o.phoneNumber}
+                            {group.phoneNumber}
                           </a>
-                          {o.gateAccess && (
+                          {group.gateAccess && (
                             <span className="text-xs inline-flex items-center gap-1 text-amber-700">
                               <Key className="w-3 h-3" />
-                              {o.gateAccess}
+                              {group.gateAccess}
                             </span>
                           )}
                         </div>
-                        {o.items && (
+                        {group.items.length > 0 && (
                           <div className="text-xs text-muted-foreground flex items-start gap-1">
                             <Package className="w-3 h-3 mt-0.5 shrink-0" />
-                            <span>{o.items}</span>
+                            <span>{group.items.join("; ")}</span>
                           </div>
                         )}
-                        {o.notes && (
-                          <div className="text-xs text-muted-foreground italic">📝 {o.notes}</div>
+                        {group.notes.length > 0 && (
+                          <div className="text-xs text-muted-foreground italic">
+                            {group.notes.map((n, i) => (
+                              <div key={i}>📝 {n}</div>
+                            ))}
+                          </div>
                         )}
+                        <div className="text-[10px] text-muted-foreground/70 font-mono">
+                          {group.orders.map((o) => o.orderNumber).join(" · ")}
+                        </div>
                       </li>
                     ))}
                   </ul>

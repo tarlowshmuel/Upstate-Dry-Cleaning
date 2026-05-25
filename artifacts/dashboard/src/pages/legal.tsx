@@ -158,11 +158,17 @@ export default function Legal() {
             <section>
               <h2 className="font-semibold text-base mb-2">2. Scheduling and pickup</h2>
               <p>
-                Pickup requests are scheduled via SMS. We will make reasonable
-                efforts to pick up your order on the requested date, but pickup and
-                delivery times are estimates and are not guaranteed. Please leave
-                your bag at the agreed-upon location and provide accurate gate codes
-                when applicable.
+                Pickup requests are scheduled via SMS.{" "}
+                <span className="font-medium">
+                  Orders must be placed by 12:00 AM (midnight) the night before
+                  your pickup day.
+                </span>{" "}
+                Requests received after the cutoff will be scheduled for a later
+                pickup date. We will make reasonable efforts to pick up your
+                order on the requested date, but pickup and delivery times are
+                estimates and are not guaranteed. Please leave your bag at the
+                agreed-upon location and provide accurate gate codes when
+                applicable.
               </p>
             </section>
 

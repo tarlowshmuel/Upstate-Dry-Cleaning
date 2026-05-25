@@ -39,6 +39,25 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Order"
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Create a new dry cleaning order (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderInput"
+      responses:
+        "201":
+          description: Created order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error
   /orders/{id}/status:
     patch:
       operationId: updateOrderStatus
@@ -148,6 +167,36 @@ components:
         - status
         - paid
         - createdAt
+    CreateOrderInput:
+      type: object
+      properties:
+        name:
+          type: string
+        phoneNumber:
+          type: string
+        town:
+          type: string
+        colony:
+          type: string
+        colonyAddress:
+          type: ["string", "null"]
+        unitNumber:
+          type: string
+        gateAccess:
+          type: ["string", "null"]
+        items:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        pickupDate:
+          type: ["string", "null"]
+          format: date
+      required:
+        - name
+        - phoneNumber
+        - town
+        - colony
+        - unitNumber
     OrderStatusUpdate:
       type: object
       properties:

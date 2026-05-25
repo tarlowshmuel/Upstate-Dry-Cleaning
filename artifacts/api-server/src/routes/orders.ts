@@ -2,12 +2,88 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { ordersTable } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { z } from "zod/v4";
 
 const router = Router();
 
-router.get("/orders", async (req, res) => {
+router.get("/orders", async (_req, res) => {
   const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt));
   res.json(orders);
+});
+
+const createOrderSchema = z.object({
+  name: z.string().trim().min(1),
+  phoneNumber: z.string().trim().min(1),
+  town: z.string().trim().min(1),
+  colony: z.string().trim().min(1),
+  colonyAddress: z.string().trim().nullable().optional(),
+  unitNumber: z.string().trim().min(1),
+  gateAccess: z.string().trim().nullable().optional(),
+  items: z.string().trim().nullable().optional(),
+  notes: z.string().trim().nullable().optional(),
+  pickupDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
+    .refine((s) => {
+      const [y, m, d] = s.split("-").map(Number);
+      const dt = new Date(Date.UTC(y!, m! - 1, d!));
+      return (
+        dt.getUTCFullYear() === y &&
+        dt.getUTCMonth() === m! - 1 &&
+        dt.getUTCDate() === d
+      );
+    }, "Invalid calendar date")
+    .nullable()
+    .optional(),
+});
+
+function generateOrderNumber(): string {
+  const num = Math.floor(10000 + Math.random() * 90000);
+  return `DRY-${num}`;
+}
+
+router.post("/orders", async (req, res) => {
+  const parsed = createOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid order", details: parsed.error.issues });
+    return;
+  }
+  const d = parsed.data;
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const orderNumber = generateOrderNumber();
+    try {
+      const [created] = await db
+        .insert(ordersTable)
+        .values({
+          orderNumber,
+          name: d.name,
+          phoneNumber: d.phoneNumber,
+          town: d.town,
+          colony: d.colony,
+          colonyAddress: d.colonyAddress ?? null,
+          unitNumber: d.unitNumber,
+          gateAccess: d.gateAccess ?? null,
+          items: d.items ?? null,
+          notes: d.notes ?? null,
+          pickupDate: d.pickupDate ?? null,
+          status: "pending",
+          paid: false,
+        })
+        .returning();
+      res.status(201).json(created);
+      return;
+    } catch (err: unknown) {
+      // 23505 = unique_violation in Postgres; retry with a new order number
+      const code = (err as { code?: string } | null)?.code;
+      if (code !== "23505") {
+        req.log.error({ err }, "Failed to create order");
+        res.status(500).json({ error: "Failed to create order" });
+        return;
+      }
+    }
+  }
+  res.status(500).json({ error: "Could not generate unique order number" });
 });
 
 router.patch("/orders/:id/status", async (req, res) => {

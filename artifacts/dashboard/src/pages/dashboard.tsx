@@ -29,6 +29,7 @@ import {
 import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoutePanel } from "@/components/route-panel";
+import { NewOrderDialog } from "@/components/new-order-dialog";
 
 function ItemsList({ text }: { text: string | null | undefined }) {
   if (!text || !text.trim()) return <span className="text-muted-foreground/40 text-sm">—</span>;
@@ -205,6 +206,7 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <NewOrderDialog />
             <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/60 border border-border/50 px-3 py-2 rounded-md font-mono">
               <Phone className="w-3.5 h-3.5 text-primary" />
               Text <span className="text-foreground font-semibold mx-1">"clean"</span> to your Twilio number

@@ -41,6 +41,23 @@ export const ListOrdersResponse = zod.array(ListOrdersResponseItem)
 
 
 /**
+ * @summary Create a new dry cleaning order (admin)
+ */
+export const CreateOrderBody = zod.object({
+  "name": zod.string(),
+  "phoneNumber": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish()
+})
+
+
+/**
  * @summary Update order status
  */
 export const UpdateOrderStatusParams = zod.object({

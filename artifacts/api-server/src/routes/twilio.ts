@@ -65,6 +65,7 @@ const TERMS_URL = `${PUBLIC_URL}/legal`;
 
 function welcomeIntro(): string {
   return [
+    `⏰ Orders must be placed by 12:00 AM (midnight) the night before your pickup day.`,
     `💵 Payment: Cash or Zelle to ${PAYMENT_PHONE} on delivery.`,
     `📄 Terms: ${TERMS_URL}`,
   ].join("\n");
