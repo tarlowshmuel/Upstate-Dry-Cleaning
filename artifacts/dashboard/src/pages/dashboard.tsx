@@ -458,10 +458,10 @@ export default function Dashboard() {
                 { num: "2", label: "Orders at cleaners", desc: "Picked up, awaiting return" },
                 { num: "3", label: "Pending orders", desc: "All not-yet-picked-up" },
                 { num: "4", label: "Unpaid orders", desc: "Owe money" },
-                { num: "5", label: "Route + Maps", desc: "Today's stops + Google Maps link" },
+                { num: "5", label: "Today's route", desc: "Stops in driving order with addresses" },
                 { num: "6", label: "Stats", desc: "Today / week / all-time totals" },
-                { num: "7", label: "Look up an order", desc: "Show details by ID" },
-                { num: "8", label: "Update an order", desc: "Picked up / delivered / paid / missed" },
+                { num: "7", label: "Look up an order", desc: "Search by name, phone, or ID" },
+                { num: "8", label: "Update an order", desc: "Search then mark picked up / paid / etc." },
               ].map(({ num, label, desc }) => (
                 <div key={num} className="flex gap-2 items-start">
                   <span className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">

@@ -2,7 +2,7 @@ import { Router } from "express";
 import twilio from "twilio";
 import { db } from "@workspace/db";
 import { conversationsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -25,6 +25,31 @@ const TOWN_SCHEDULE: Record<string, { pickup: string; dropoff: string }> = {
 };
 
 const TOWNS = Object.keys(TOWN_SCHEDULE);
+
+// Driving order from Fallsburg through Sullivan County and back.
+// Monday set: Fallsburg → South Fallsburg → Hurleyville → Woodridge → Glen Wild → Monticello.
+// Tuesday set: Woodbourne → Loch Sheldrake → Kiamesha Lake → Liberty → Ferndale → Parksville → Livingston Manor → Dairyland.
+const TOWN_ROUTE_ORDER: string[] = [
+  "Fallsburg",
+  "South Fallsburg",
+  "Woodbourne",
+  "Loch Sheldrake",
+  "Hurleyville",
+  "Woodridge",
+  "Glen Wild",
+  "Kiamesha Lake",
+  "Monticello",
+  "Ferndale",
+  "Liberty",
+  "Parksville",
+  "Livingston Manor",
+  "Dairyland",
+];
+
+function townRouteIndex(town: string): number {
+  const i = TOWN_ROUTE_ORDER.indexOf(town);
+  return i === -1 ? 999 : i;
+}
 
 const DAY_NUM: Record<string, number> = {
   Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
@@ -143,7 +168,7 @@ const ADMIN_MAIN_MENU = [
   "2. Orders at cleaners",
   "3. Pending orders",
   "4. Unpaid orders",
-  "5. Route + Maps link",
+  "5. Today's route (driving order)",
   "6. Stats",
   "7. Look up an order",
   "8. Update an order",
@@ -228,27 +253,38 @@ async function actionRoute(): Promise<string> {
   const today = toDateOnly(new Date());
   const orders = await db
     .select().from(ordersTable)
-    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)))
-    .orderBy(ordersTable.town);
+    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, today)));
   if (orders.length === 0) return "No pickups for today's route.";
 
-  const byTown = new Map<string, OrderRow[]>();
-  for (const o of orders) {
-    if (!byTown.has(o.town)) byTown.set(o.town, []);
-    byTown.get(o.town)!.push(o);
-  }
+  // Sort by driving order: town route index, then colony (keeps same-complex stops together), then address.
+  const sorted = [...orders].sort((a, b) => {
+    const ta = townRouteIndex(a.town);
+    const tb = townRouteIndex(b.town);
+    if (ta !== tb) return ta - tb;
+    const ca = (a.colony ?? "").localeCompare(b.colony ?? "");
+    if (ca !== 0) return ca;
+    return (a.colonyAddress ?? "").localeCompare(b.colonyAddress ?? "");
+  });
 
-  let msg = `ROUTE — ${orders.length} stop${orders.length !== 1 ? "s" : ""}:\n`;
-  for (const [town, townOrders] of byTown) {
-    msg += `\n${town.toUpperCase()} (${townOrders.length}):\n`;
-    for (const o of townOrders) {
-      const gate = o.gateAccess ? ` [Gate: ${o.gateAccess}]` : "";
-      const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
-      msg += `  #${o.id} ${o.name} — ${addr}${o.colony}, Unit ${o.unitNumber}${gate}\n`;
+  let msg = `🚚 ROUTE — ${sorted.length} stop${sorted.length !== 1 ? "s" : ""}\n`;
+  msg += `Start: ${DRIVER_START}\n`;
+  let currentTown = "";
+  sorted.forEach((o, i) => {
+    if (o.town !== currentTown) {
+      currentTown = o.town;
+      msg += `\n— ${currentTown.toUpperCase()} —\n`;
     }
-  }
-  msg += `\n📍 Open in Google Maps:\n${buildRouteUrl(orders)}`;
-  return msg.trim();
+    const addr = o.colonyAddress ?? "";
+    const gate = o.gateAccess ? `   Gate: ${o.gateAccess}\n` : "";
+    msg += `\n${i + 1}. ${o.name}\n`;
+    if (addr) msg += `   ${addr}\n`;
+    msg += `   ${o.colony}, Unit ${o.unitNumber}\n`;
+    msg += `   ${o.town}, NY\n`;
+    msg += gate;
+    msg += `   📞 ${o.phoneNumber}\n`;
+  });
+  msg += `\nEnd: ${DRIVER_END}`;
+  return msg;
 }
 
 async function actionStats(range: "today" | "week" | "all"): Promise<string> {
@@ -308,6 +344,43 @@ async function actionLookup(id: number): Promise<string> {
   return formatOrder(order);
 }
 
+// Search by ID (exact), phone fragment (digits), or name (text). Returns matches newest-first.
+async function searchOrders(rawQuery: string): Promise<OrderRow[]> {
+  const q = rawQuery.trim();
+  if (!q) return [];
+
+  // Pure digits: try ID first if short, then phone fragment.
+  if (/^\d+$/.test(q)) {
+    if (q.length <= 5) {
+      const byId = await db.select().from(ordersTable)
+        .where(eq(ordersTable.id, parseInt(q, 10))).limit(1);
+      if (byId.length) return byId;
+    }
+    // Strip non-digits from phone column and match a substring.
+    const byPhone = await db.select().from(ordersTable)
+      .where(sql`regexp_replace(${ordersTable.phoneNumber}, '\\D', '', 'g') LIKE ${'%' + q + '%'}`)
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(20);
+    return byPhone;
+  }
+
+  // Text: case-insensitive name OR colony match.
+  return await db.select().from(ordersTable)
+    .where(or(
+      ilike(ordersTable.name, `%${q}%`),
+      ilike(ordersTable.colony, `%${q}%`),
+    ))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(20);
+}
+
+function formatMatchList(matches: OrderRow[]): string {
+  return matches.map((o, i) => {
+    const paid = o.paid ? "paid" : "unpaid";
+    return `${i + 1}. #${o.id} ${o.name} — ${o.colony}, ${o.town} (${o.status}, ${paid})`;
+  }).join("\n");
+}
+
 async function actionApplyUpdate(id: number, choice: string): Promise<string> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
   if (!order) return `Order #${id} not found.`;
@@ -333,7 +406,7 @@ async function actionApplyUpdate(id: number, choice: string): Promise<string> {
 }
 
 // ─── Admin Menu Handler ────────────────────────────────────────────────────────
-async function handleAdminCommand(from: string, text: string): Promise<string> {
+async function handleAdminCommand(from: string, text: string, raw: string): Promise<string> {
   // Universal "menu" / "back" / empty resets to main menu
   if (text === "menu" || text === "back" || text === "0" || text === "help" || text === "") {
     await setAdminStep(from, "admin_main");
@@ -348,13 +421,46 @@ async function handleAdminCommand(from: string, text: string): Promise<string> {
 
   const step = session?.step;
 
-  // ── Update flow: collecting order ID ───────────────────────────────────────
-  if (step === "admin_update_id") {
-    if (!/^\d+$/.test(text)) return `Please enter a numeric order ID, or "0" to go back.`;
-    const id = parseInt(text, 10);
+  // ── Lookup flow: collecting search query ───────────────────────────────────
+  if (step === "admin_lookup" || step === "admin_update_search") {
+    const nextFlow = step === "admin_lookup" ? "lookup" : "update";
+    const matches = await searchOrders(raw);
+    if (matches.length === 0) {
+      return `No orders matched "${raw}".\nTry a name, phone digits, or order ID — or reply 0 to go back.`;
+    }
+    if (matches.length === 1) {
+      const o = matches[0]!;
+      if (nextFlow === "lookup") {
+        await setAdminStep(from, "admin_main");
+        return `${formatOrder(o)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      }
+      await setAdminStep(from, "admin_update_action", String(o.id));
+      return adminUpdateMenu(o);
+    }
+    const ids = matches.map((m) => m.id).join(",");
+    const pickStep = nextFlow === "lookup" ? "admin_lookup_pick" : "admin_update_pick";
+    await setAdminStep(from, pickStep, ids);
+    return `Found ${matches.length} matches — reply with a number:\n\n${formatMatchList(matches)}\n\n0. Back to menu`;
+  }
+
+  // ── Lookup/Update picker: choosing from match list ─────────────────────────
+  if (step === "admin_lookup_pick" || step === "admin_update_pick") {
+    const nextFlow = step === "admin_lookup_pick" ? "lookup" : "update";
+    const ids = (session?.items ?? "").split(",").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+    if (!/^\d+$/.test(text)) return `Please reply with a number 1-${ids.length}, or "0" to go back.`;
+    const pick = parseInt(text, 10);
+    if (pick < 1 || pick > ids.length) {
+      return `Please reply with a number 1-${ids.length}, or "0" to go back.`;
+    }
+    const id = ids[pick - 1]!;
     const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
     if (!order) {
-      return `Order #${id} not found. Enter another ID, or "0" to go back.`;
+      await setAdminStep(from, "admin_main");
+      return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    if (nextFlow === "lookup") {
+      await setAdminStep(from, "admin_main");
+      return `${formatOrder(order)}\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
     await setAdminStep(from, "admin_update_action", String(id));
     return adminUpdateMenu(order);
@@ -362,25 +468,16 @@ async function handleAdminCommand(from: string, text: string): Promise<string> {
 
   // ── Update flow: applying action ───────────────────────────────────────────
   if (step === "admin_update_action") {
-    const id = parseInt(session?.items ?? "");
+    const id = parseInt(session?.items ?? "", 10);
     if (isNaN(id)) {
       await setAdminStep(from, "admin_main");
-      return "Lost track of that order. " + ADMIN_MAIN_MENU;
+      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
     }
     if (!["1", "2", "3", "4", "5"].includes(text)) {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
       return `Please reply 1-5, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
     const result = await actionApplyUpdate(id, text);
-    await setAdminStep(from, "admin_main");
-    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
-  }
-
-  // ── Lookup flow: collecting order ID ───────────────────────────────────────
-  if (step === "admin_lookup") {
-    if (!/^\d+$/.test(text)) return `Please enter a numeric order ID, or "0" to go back.`;
-    const id = parseInt(text, 10);
-    const result = await actionLookup(id);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
@@ -426,11 +523,11 @@ async function handleAdminCommand(from: string, text: string): Promise<string> {
     }
     case "7": {
       await setAdminStep(from, "admin_lookup");
-      return `🔍 Enter the order ID to look up (just the number, e.g. "5"):\n\n0. Back to menu`;
+      return `🔍 Search for an order — reply with any of:\n  • Customer name (e.g. "Sarah")\n  • Phone digits (e.g. "5559876")\n  • Order ID (e.g. "5")\n\n0. Back to menu`;
     }
     case "8": {
-      await setAdminStep(from, "admin_update_id");
-      return `✏️ Enter the order ID to update:\n\n0. Back to menu`;
+      await setAdminStep(from, "admin_update_search");
+      return `✏️ Find the order to update — reply with any of:\n  • Customer name\n  • Phone digits\n  • Order ID\n\n0. Back to menu`;
     }
     default:
       await setAdminStep(from, "admin_main");
@@ -486,7 +583,7 @@ router.post("/webhook/twilio", async (req, res) => {
   // ── Admin branch ─────────────────────────────────────────────────────────
   const adminPhone = process.env.ADMIN_PHONE_NUMBER;
   if (adminPhone && from === adminPhone) {
-    const reply = await handleAdminCommand(from, text);
+    const reply = await handleAdminCommand(from, text, raw);
     res.send(twimlResponse(reply));
     return;
   }
