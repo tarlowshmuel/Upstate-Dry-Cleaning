@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: orders
+    description: Dry cleaning order operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List all dry cleaning orders
+      responses:
+        "200":
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +49,38 @@ components:
           type: string
       required:
         - status
-
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderNumber:
+          type: string
+        phoneNumber:
+          type: string
+        name:
+          type: string
+        town:
+          type: string
+        colony:
+          type: string
+        unitNumber:
+          type: string
+        gateAccess:
+          type: string
+          nullable: true
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - orderNumber
+        - phoneNumber
+        - name
+        - town
+        - colony
+        - unitNumber
+        - status
+        - createdAt

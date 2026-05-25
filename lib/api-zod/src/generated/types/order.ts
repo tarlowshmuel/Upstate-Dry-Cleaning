@@ -5,9 +5,6 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
 
 export interface Order {
   id: number;
@@ -19,6 +16,5 @@ export interface Order {
   unitNumber: string;
   gateAccess?: string | null;
   status: string;
-  createdAt: string;
+  createdAt: Date;
 }
-
