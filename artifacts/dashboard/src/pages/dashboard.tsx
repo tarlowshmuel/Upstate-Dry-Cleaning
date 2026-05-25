@@ -339,6 +339,21 @@ export default function Dashboard() {
                     All Time
                   </ToggleGroupItem>
                 </ToggleGroup>
+                {(statusFilter !== "all" || paidFilter !== "all" || range !== "all" || sortBy !== "newest") ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setPaidFilter("all");
+                      setRange("all");
+                      setSortBy("newest");
+                    }}
+                  >
+                    Reset filters
+                  </Button>
+                ) : null}
               </div>
             </div>
           </CardHeader>
