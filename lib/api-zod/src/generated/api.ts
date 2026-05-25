@@ -17,6 +17,18 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary List service towns with their pickup schedule
+ */
+export const ListTownsResponseItem = zod.object({
+  "name": zod.string(),
+  "pickupDay": zod.string().describe('Day of week the driver picks up here (e.g. \"Monday\")'),
+  "dropoffDay": zod.string(),
+  "nextPickupDate": zod.coerce.date().nullish().describe('The next scheduled pickup date for this town (YYYY-MM-DD), respecting the midnight-before cutoff')
+})
+export const ListTownsResponse = zod.array(ListTownsResponseItem)
+
+
+/**
  * @summary List all dry cleaning orders
  */
 export const ListOrdersResponseItem = zod.object({

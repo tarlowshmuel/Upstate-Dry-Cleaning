@@ -11,4 +11,5 @@ export * from './healthStatus';
 export * from './order';
 export * from './orderPaidUpdate';
 export * from './orderStatusUpdate';
+export * from './town';
 export * from './updateOrderInput';

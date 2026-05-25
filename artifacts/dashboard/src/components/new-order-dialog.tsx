@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCreateOrder, getListOrdersQueryKey } from "@workspace/api-client-react";
+import {
+  useCreateOrder,
+  useListTowns,
+  getListOrdersQueryKey,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,17 +18,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
-
-function tomorrowDateString(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 const emptyForm = () => ({
   name: "",
@@ -36,21 +38,44 @@ const emptyForm = () => ({
   gateAccess: "",
   items: "",
   notes: "",
-  pickupDate: tomorrowDateString(),
+  pickupDate: "",
 });
 
 export function NewOrderDialog() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
+  const [pickupTouched, setPickupTouched] = useState(false);
   const qc = useQueryClient();
   const { mutateAsync, isPending } = useCreateOrder();
+  const { data: towns, isLoading: townsLoading, isError: townsError, refetch: refetchTowns } = useListTowns();
 
   function update<K extends keyof ReturnType<typeof emptyForm>>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // Pick the next pickup date from the town's schedule. Only auto-fill if the
+  // admin hasn't manually overridden the date — that way picking the town
+  // first (the common case) gets the right date, but a deliberate edit isn't
+  // clobbered if they change the town afterwards.
+  function onTownChange(town: string) {
+    setForm((f) => {
+      const next: typeof f = { ...f, town };
+      const sched = towns?.find((t) => t.name === town);
+      if (sched?.nextPickupDate && !pickupTouched) {
+        next.pickupDate = sched.nextPickupDate;
+      }
+      return next;
+    });
+  }
+
+  const selectedTownSchedule = towns?.find((t) => t.name === form.town);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.town) {
+      toast.error("Please pick a town");
+      return;
+    }
     try {
       await mutateAsync({
         data: {
@@ -70,6 +95,7 @@ export function NewOrderDialog() {
       await qc.invalidateQueries({ queryKey: ["route", "today"] });
       toast.success("Order created");
       setForm(emptyForm());
+      setPickupTouched(false);
       setOpen(false);
     } catch (err) {
       toast.error("Failed to create order");
@@ -114,7 +140,34 @@ export function NewOrderDialog() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="no-town">Town *</Label>
-              <Input id="no-town" value={form.town} onChange={(e) => update("town", e.target.value)} required />
+              <Select value={form.town} onValueChange={onTownChange} disabled={townsLoading || townsError}>
+                <SelectTrigger id="no-town">
+                  <SelectValue
+                    placeholder={
+                      townsLoading ? "Loading towns…" : townsError ? "Failed to load" : "Pick a town"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(towns ?? []).map((t) => (
+                    <SelectItem key={t.name} value={t.name}>
+                      {t.name}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        ({t.pickupDay}s)
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {townsError ? (
+                <button
+                  type="button"
+                  onClick={() => refetchTowns()}
+                  className="text-xs text-destructive underline"
+                >
+                  Retry loading towns
+                </button>
+              ) : null}
             </div>
             <div className="space-y-1">
               <Label htmlFor="no-colony">Colony *</Label>
@@ -127,12 +180,22 @@ export function NewOrderDialog() {
               <Input id="no-unit" value={form.unitNumber} onChange={(e) => update("unitNumber", e.target.value)} required />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="no-pickup">Pickup date</Label>
+              <Label htmlFor="no-pickup">
+                Pickup date
+                {selectedTownSchedule && !pickupTouched && form.pickupDate ? (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    (auto · next {selectedTownSchedule.pickupDay})
+                  </span>
+                ) : null}
+              </Label>
               <Input
                 id="no-pickup"
                 type="date"
                 value={form.pickupDate}
-                onChange={(e) => update("pickupDate", e.target.value)}
+                onChange={(e) => {
+                  setPickupTouched(true);
+                  update("pickupDate", e.target.value);
+                }}
               />
             </div>
           </div>

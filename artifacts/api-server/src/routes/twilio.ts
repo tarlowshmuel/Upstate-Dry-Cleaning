@@ -129,6 +129,24 @@ function townList(): string {
   return TOWNS.map((t, i) => `${i + 1}. ${t}`).join("\n");
 }
 
+// Public read-only endpoint so the dashboard can show the towns + auto-fill
+// pickup date when the admin picks a town in the New Order dialog.
+router.get("/towns", (_req, res) => {
+  const now = new Date();
+  res.json(
+    TOWNS.map((name) => {
+      const sched = TOWN_SCHEDULE[name]!;
+      const next = nextPickupDate(name, now);
+      return {
+        name,
+        pickupDay: sched.pickup,
+        dropoffDay: sched.dropoff,
+        nextPickupDate: next ? toDateOnly(next) : null,
+      };
+    }),
+  );
+});
+
 // Parse free-form items text like "2 suits, 3 dress shirts, 1 coat" → { Suit: 2, Dress Shirt: 3, Coat: 1 }
 function parseItemsText(text: string | null): Record<string, number> {
   if (!text) return {};

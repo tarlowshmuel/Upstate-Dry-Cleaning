@@ -9,6 +9,18 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface Town {
+  name: string;
+  /** Day of week the driver picks up here (e.g. "Monday") */
+  pickupDay: string;
+  dropoffDay: string;
+  /**
+     * The next scheduled pickup date for this town (YYYY-MM-DD), respecting the midnight-before cutoff
+     * @nullable
+     */
+  nextPickupDate?: string | null;
+}
+
 export interface Order {
   id: number;
   orderNumber: string;

@@ -25,6 +25,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /towns:
+    get:
+      operationId: listTowns
+      tags: [orders]
+      summary: List service towns with their pickup schedule
+      responses:
+        "200":
+          description: List of towns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Town"
   /orders:
     get:
       operationId: listOrders
@@ -147,6 +161,24 @@ components:
           type: string
       required:
         - status
+    Town:
+      type: object
+      properties:
+        name:
+          type: string
+        pickupDay:
+          type: string
+          description: Day of week the driver picks up here (e.g. "Monday")
+        dropoffDay:
+          type: string
+        nextPickupDate:
+          type: ["string", "null"]
+          format: date
+          description: The next scheduled pickup date for this town (YYYY-MM-DD), respecting the midnight-before cutoff
+      required:
+        - name
+        - pickupDay
+        - dropoffDay
     Order:
       type: object
       properties:
