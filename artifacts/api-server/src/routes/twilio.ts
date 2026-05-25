@@ -173,10 +173,11 @@ function formatOrder(o: OrderRow): string {
   const gate = o.gateAccess ? `Gate: ${o.gateAccess}` : "No gate";
   const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
   const notesLine = o.notes ? `\n📝 Notes: ${o.notes}` : "";
+  const itemsLine = `\n📦 Items: ${o.items ?? "(not set)"}`;
   const ticketsLine = `\n🎫 Tickets: ${o.cleanerTickets ?? "(not set)"}`;
   const pickup = o.pickupDate ? `Pickup: ${o.pickupDate}\n` : "";
   const paid = o.paid ? "PAID ✓" : "UNPAID";
-  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}${ticketsLine}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
+  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}${itemsLine}${ticketsLine}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
 }
 
 // ─── Admin Menu System ─────────────────────────────────────────────────────────
@@ -216,6 +217,7 @@ function adminUpdateMenu(order: OrderRow): string {
     `4. Mark paid`,
     `5. Mark unpaid`,
     `6. Set cleaner ticket #s`,
+    `7. Set items`,
     ``,
     `0. Back to menu`,
   ].join("\n");
@@ -575,9 +577,21 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
              `One per item, comma-separated.\nExample: 4123, 4124, 4125\n\n` +
              `Text "clear" to remove, or "0" to cancel.${current}`;
     }
+    if (text === "7") {
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      if (!order) {
+        await setAdminStep(from, "admin_main");
+        return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      await setAdminStep(from, "admin_update_items", String(id));
+      const current = order.items ? `\n\nCurrent: ${order.items}` : "";
+      return `📦 Enter items for order #${id} (${order.name}).\n\n` +
+             `List with quantities, comma-separated.\nExample: 2 suits, 3 dress shirts, 1 coat\n\n` +
+             `Text "clear" to remove, or "0" to cancel.${current}`;
+    }
     if (!["1", "2", "3", "4", "5"].includes(text)) {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      return `Please reply 1-6, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
+      return `Please reply 1-7, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
     const result = await actionApplyUpdate(id, text);
     await setAdminStep(from, "admin_main");
@@ -595,6 +609,20 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     await db.update(ordersTable).set({ cleanerTickets: value }).where(eq(ordersTable.id, id));
     await setAdminStep(from, "admin_main");
     const summary = value ? `Tickets set to: ${value}` : `Tickets cleared.`;
+    return `✅ Order #${id} — ${summary}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Update flow: capturing items ───────────────────────────────────────────
+  if (step === "admin_update_items") {
+    const id = parseInt(session?.items ?? "", 10);
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
+    }
+    const value = text === "clear" || text === "none" ? null : raw;
+    await db.update(ordersTable).set({ items: value }).where(eq(ordersTable.id, id));
+    await setAdminStep(from, "admin_main");
+    const summary = value ? `Items set to: ${value}` : `Items cleared.`;
     return `✅ Order #${id} — ${summary}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
