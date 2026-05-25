@@ -193,6 +193,9 @@ export function RoutePanel() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="font-semibold">{stop.colony}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {stop.orders.length} order{stop.orders.length !== 1 ? "s" : ""}
+                    </Badge>
                     <span className="text-xs text-muted-foreground">{stop.town}, NY</span>
                     {stop.ungeocoded && (
                       <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">
