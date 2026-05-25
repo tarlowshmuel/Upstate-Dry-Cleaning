@@ -381,28 +381,95 @@ function formatMatchList(matches: OrderRow[]): string {
   }).join("\n");
 }
 
+// ─── Customer Notifications ───────────────────────────────────────────────────
+// Returns a short suffix to append to the admin reply, indicating whether the
+// customer was notified. Never throws — SMS failures must not block status changes.
+async function notifyCustomer(order: OrderRow, message: string): Promise<string> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  if (!sid || !token || !fromNumber) {
+    return `\n(⚠️ Customer NOT notified — TWILIO_PHONE_NUMBER not configured.)`;
+  }
+  try {
+    const client = twilio(sid, token);
+    await client.messages.create({
+      to: order.phoneNumber,
+      from: fromNumber,
+      body: message,
+    });
+    return `\n📩 Customer notified.`;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `\n⚠️ Customer notify FAILED: ${msg}`;
+  }
+}
+
+function customerStatusMessage(order: OrderRow, newStatus: string): string | null {
+  const greeting = `Hi ${order.name.split(" ")[0] ?? order.name}!`;
+  switch (newStatus) {
+    case "picked_up":
+      return `${greeting} ✅ We just picked up your order ${order.orderNumber} from ${order.colony}. It's on the way to the cleaners — we'll text you again when it's been delivered back to your unit.`;
+    case "delivered":
+      return `${greeting} 🧺 Your dry cleaning order ${order.orderNumber} has been delivered back to ${order.colony}, Unit ${order.unitNumber}. Thanks for choosing Fresh Pick!${order.paid ? "" : " (Reminder: payment still due.)"}`;
+    case "missed":
+      return `${greeting} We weren't able to pick up your order ${order.orderNumber} today. Please text us to reschedule — sorry for the inconvenience!`;
+    default:
+      return null;
+  }
+}
+
 async function actionApplyUpdate(id: number, choice: string): Promise<string> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
   if (!order) return `Order #${id} not found.`;
+
+  let newStatus: "picked_up" | "delivered" | "missed" | null = null;
+  let paidUpdate: boolean | null = null;
+  let baseReply = "";
+
   switch (choice) {
     case "1":
-      await db.update(ordersTable).set({ status: "picked_up" }).where(eq(ordersTable.id, id));
-      return `✅ Order #${id} (${order.name}) — marked picked up.`;
+      newStatus = "picked_up";
+      baseReply = `✅ Order #${id} (${order.name}) — marked picked up.`;
+      break;
     case "2":
-      await db.update(ordersTable).set({ status: "delivered" }).where(eq(ordersTable.id, id));
-      return `✅ Order #${id} (${order.name}) — marked delivered.`;
+      newStatus = "delivered";
+      baseReply = `✅ Order #${id} (${order.name}) — marked delivered.`;
+      break;
     case "3":
-      await db.update(ordersTable).set({ status: "missed" }).where(eq(ordersTable.id, id));
-      return `✅ Order #${id} (${order.name}) — marked missed.`;
+      newStatus = "missed";
+      baseReply = `✅ Order #${id} (${order.name}) — marked missed.`;
+      break;
     case "4":
-      await db.update(ordersTable).set({ paid: true }).where(eq(ordersTable.id, id));
-      return `✅ Order #${id} (${order.name}) — marked PAID.`;
+      paidUpdate = true;
+      baseReply = `✅ Order #${id} (${order.name}) — marked PAID.`;
+      break;
     case "5":
-      await db.update(ordersTable).set({ paid: false }).where(eq(ordersTable.id, id));
-      return `✅ Order #${id} (${order.name}) — marked UNPAID.`;
+      paidUpdate = false;
+      baseReply = `✅ Order #${id} (${order.name}) — marked UNPAID.`;
+      break;
     default:
       return "Invalid choice.";
   }
+
+  if (newStatus) {
+    await db.update(ordersTable).set({ status: newStatus }).where(eq(ordersTable.id, id));
+    const updatedOrder = { ...order, status: newStatus };
+    const msg = customerStatusMessage(updatedOrder, newStatus);
+    if (msg) {
+      const notifyResult = await notifyCustomer(updatedOrder, msg);
+      return baseReply + notifyResult;
+    }
+    return baseReply;
+  }
+
+  if (paidUpdate !== null) {
+    await db.update(ordersTable).set({ paid: paidUpdate }).where(eq(ordersTable.id, id));
+    // Paid/unpaid is internal bookkeeping — no customer notification.
+    return baseReply;
+  }
+
+  return baseReply;
 }
 
 // ─── Admin Menu Handler ────────────────────────────────────────────────────────
