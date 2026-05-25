@@ -327,9 +327,9 @@ function buildConfirmationSms(order: {
     `📅 Pickup: ${formatLongDate(order.pickupDate)}`,
     `📅 Drop-off by: ${formatLongDate(dropoff)}`,
     ``,
-    `⏰ Cutoff: Future orders must be placed before 12:00 AM of your pickup day.`,
+    `⏰ Order cutoff: 12:00 AM the night before your pickup day.`,
     ``,
-    `📋 Please have your items bagged and ready by 9 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`,
+    `📋 Please have your items bagged and ready by 10:00 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`,
   ].join("\n");
 }
 
