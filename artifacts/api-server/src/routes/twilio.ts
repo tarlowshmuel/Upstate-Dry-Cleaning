@@ -6,43 +6,46 @@ import { eq, and, gte, desc } from "drizzle-orm";
 
 const router = Router();
 
-// ─── Upstate NY Towns ─────────────────────────────────────────────────────────
-const TOWNS: string[] = [
-  "Albany",
-  "Amsterdam",
-  "Auburn",
-  "Binghamton",
-  "Canton",
-  "Catskill",
-  "Cooperstown",
-  "Cortland",
-  "Elmira",
-  "Fulton",
-  "Geneva",
-  "Glens Falls",
-  "Gloversville",
-  "Hudson",
-  "Ithaca",
-  "Johnstown",
-  "Kingston",
-  "Lake Placid",
-  "Malone",
-  "Massena",
-  "Newburgh",
-  "Ogdensburg",
-  "Oneida",
-  "Oneonta",
-  "Oswego",
-  "Plattsburgh",
-  "Potsdam",
-  "Poughkeepsie",
-  "Rome",
-  "Saratoga Springs",
-  "Schenectady",
-  "Troy",
-  "Utica",
-  "Watertown",
+// ─── Towns + Schedule ─────────────────────────────────────────────────────────
+// Each town maps to { pickup: weekday name, dropoff: weekday name }
+const TOWN_SCHEDULE: Record<string, { pickup: string; dropoff: string }> = {
+  "Monticello":       { pickup: "Monday",  dropoff: "Wednesday" },
+  "South Fallsburg":  { pickup: "Monday",  dropoff: "Wednesday" },
+  "Woodridge":        { pickup: "Monday",  dropoff: "Wednesday" },
+  "Glen Wild":        { pickup: "Monday",  dropoff: "Wednesday" },
+  "Fallsburg":        { pickup: "Monday",  dropoff: "Wednesday" },
+  "Hurleyville":      { pickup: "Monday",  dropoff: "Wednesday" },
+  "Woodbourne":       { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Loch Sheldrake":   { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Liberty":          { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Kiamesha Lake":    { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Ferndale":         { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Parksville":       { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Livingston Manor": { pickup: "Tuesday", dropoff: "Thursday"  },
+  "Dairyland":        { pickup: "Tuesday", dropoff: "Thursday"  },
+};
+
+const TOWNS = Object.keys(TOWN_SCHEDULE);
+
+// ─── Dry Cleaning Items ────────────────────────────────────────────────────────
+const ITEMS = [
+  "Suit",
+  "Jacket / Blazer",
+  "Dress Shirt",
+  "Pants / Trousers",
+  "Dress",
+  "Skirt",
+  "Blouse",
+  "Sweater / Knit",
+  "Coat / Winter Jacket",
+  "Tie / Scarf",
+  "Comforter / Blanket",
 ];
+
+// Steps: name → town → colony → colonyAddress → unit → gate → item_0..item_N → items_confirm
+const itemStep = (index: number) => `item_${index}`;
+const isItemStep = (step: string) => /^item_\d+$/.test(step);
+const itemIndexFromStep = (step: string) => parseInt(step.replace("item_", ""));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function twimlResponse(message: string): string {
@@ -62,21 +65,35 @@ function todayStart(): Date {
   return d;
 }
 
+function townList(): string {
+  return TOWNS.map((t, i) => `${i + 1}. ${t}`).join("\n");
+}
+
+function parseItems(json: string | null | undefined): Record<string, number> {
+  if (!json) return {};
+  try { return JSON.parse(json) as Record<string, number>; }
+  catch { return {}; }
+}
+
+function formatItemsList(json: string | null | undefined): string {
+  const items = parseItems(json);
+  const lines = Object.entries(items)
+    .filter(([, qty]) => qty > 0)
+    .map(([name, qty]) => `  ${qty}x ${name}`);
+  return lines.length > 0 ? lines.join("\n") : "  (none selected)";
+}
+
 type OrderRow = typeof ordersTable.$inferSelect;
 
 function formatOrder(o: OrderRow): string {
   const gate = o.gateAccess ? `Gate: ${o.gateAccess}` : "No gate";
   const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
-  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nStatus: ${o.status}`;
-}
-
-function townList(): string {
-  return TOWNS.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  const itemsStr = formatItemsList(o.items);
+  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nStatus: ${o.status}\nItems:\n${itemsStr}`;
 }
 
 // ─── Admin Commands ────────────────────────────────────────────────────────────
 async function handleAdminCommand(text: string, raw: string): Promise<string> {
-  // help
   if (text === "help") {
     return [
       "COMMANDS:",
@@ -91,54 +108,44 @@ async function handleAdminCommand(text: string, raw: string): Promise<string> {
     ].join("\n");
   }
 
-  // today pickups — pending orders created today
   if (text === "today pickups") {
     const orders = await db
-      .select()
-      .from(ordersTable)
+      .select().from(ordersTable)
       .where(and(eq(ordersTable.status, "pending"), gte(ordersTable.createdAt, todayStart())))
       .orderBy(ordersTable.town);
     if (orders.length === 0) return "No pickups scheduled for today.";
     return `TODAY'S PICKUPS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
   }
 
-  // today returns — picked_up orders (clothes at cleaners, being returned)
   if (text === "today returns") {
     const orders = await db
-      .select()
-      .from(ordersTable)
+      .select().from(ordersTable)
       .where(eq(ordersTable.status, "picked_up"))
       .orderBy(ordersTable.town);
     if (orders.length === 0) return "No returns scheduled.";
     return `RETURNS (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
   }
 
-  // pending — all pending orders
   if (text === "pending") {
     const orders = await db
-      .select()
-      .from(ordersTable)
+      .select().from(ordersTable)
       .where(eq(ordersTable.status, "pending"))
       .orderBy(desc(ordersTable.createdAt));
     if (orders.length === 0) return "No pending orders.";
     return `PENDING (${orders.length}):\n\n` + orders.map(formatOrder).join("\n\n---\n\n");
   }
 
-  // route — today's pending pickups grouped by town
   if (text === "route") {
     const orders = await db
-      .select()
-      .from(ordersTable)
+      .select().from(ordersTable)
       .where(and(eq(ordersTable.status, "pending"), gte(ordersTable.createdAt, todayStart())))
       .orderBy(ordersTable.town);
     if (orders.length === 0) return "No pickups for today's route.";
-
     const byTown = new Map<string, OrderRow[]>();
     for (const o of orders) {
       if (!byTown.has(o.town)) byTown.set(o.town, []);
       byTown.get(o.town)!.push(o);
     }
-
     let msg = `ROUTE — ${orders.length} stop${orders.length !== 1 ? "s" : ""}:\n`;
     for (const [town, townOrders] of byTown) {
       msg += `\n${town.toUpperCase()} (${townOrders.length}):\n`;
@@ -151,7 +158,6 @@ async function handleAdminCommand(text: string, raw: string): Promise<string> {
     return msg.trim();
   }
 
-  // customer [id]
   const customerMatch = text.match(/^customer (\d+)$/);
   if (customerMatch) {
     const id = parseInt(customerMatch[1]!);
@@ -160,7 +166,6 @@ async function handleAdminCommand(text: string, raw: string): Promise<string> {
     return formatOrder(order);
   }
 
-  // mark completed [id]
   const completedMatch = text.match(/^mark completed (\d+)$/);
   if (completedMatch) {
     const id = parseInt(completedMatch[1]!);
@@ -170,7 +175,6 @@ async function handleAdminCommand(text: string, raw: string): Promise<string> {
     return `Order #${id} (${order.name}) — marked picked up.`;
   }
 
-  // mark paid [id]
   const paidMatch = text.match(/^mark paid (\d+)$/);
   if (paidMatch) {
     const id = parseInt(paidMatch[1]!);
@@ -180,7 +184,6 @@ async function handleAdminCommand(text: string, raw: string): Promise<string> {
     return `Order #${id} (${order.name}) — marked paid.`;
   }
 
-  // missed [id]
   const missedMatch = text.match(/^missed (\d+)$/);
   if (missedMatch) {
     const id = parseInt(missedMatch[1]!);
@@ -193,12 +196,50 @@ async function handleAdminCommand(text: string, raw: string): Promise<string> {
   return `Unknown command. Text "help" for a list of commands.`;
 }
 
+// ─── Item step prompt ─────────────────────────────────────────────────────────
+function itemPrompt(index: number): string {
+  const item = ITEMS[index]!;
+  const progress = `(${index + 1}/${ITEMS.length})`;
+  return `${progress} How many ${item}s are you bringing in?\n\nReply with a number — or 0 to skip.`;
+}
+
+// ─── Confirmation message sent after order is placed ─────────────────────────
+function buildConfirmationSms(order: {
+  orderNumber: string;
+  name: string;
+  town: string;
+  colony: string;
+  colonyAddress: string | null;
+  unitNumber: string;
+  items: string | null;
+}): string {
+  const schedule = TOWN_SCHEDULE[order.town] ?? { pickup: "TBD", dropoff: "TBD" };
+  const addr = order.colonyAddress ? `${order.colonyAddress}, ` : "";
+  const itemsStr = formatItemsList(order.items);
+
+  return [
+    `✅ Order Confirmed — ${order.orderNumber}`,
+    ``,
+    `📍 ${addr}${order.colony}, Unit ${order.unitNumber}`,
+    `   ${order.town}`,
+    ``,
+    `📦 Items:`,
+    itemsStr,
+    ``,
+    `📅 Pickup: ${schedule.pickup}`,
+    `📅 Drop-off: ${schedule.dropoff}`,
+    ``,
+    `📋 Preparation Instructions:`,
+    `Please have your items bagged and ready by 9 AM on ${schedule.pickup}. Unprepared or missing orders cannot be picked up. A separate bag per customer is appreciated. Thank you! 🙏`,
+  ].join("\n");
+}
+
 // ─── Webhook ──────────────────────────────────────────────────────────────────
 router.post("/webhook/twilio", async (req, res) => {
   const body = req.body as { Body?: string; From?: string };
   const from = (body.From ?? "").trim();
   const raw = (body.Body ?? "").trim();
-  const text = raw.toLowerCase();
+  const text = raw.toLowerCase().trim();
 
   res.setHeader("Content-Type", "text/xml");
 
@@ -215,8 +256,7 @@ router.post("/webhook/twilio", async (req, res) => {
     return;
   }
 
-  // ── Customer branch ───────────────────────────────────────────────────────
-
+  // ── Start fresh ───────────────────────────────────────────────────────────
   if (text === "clean") {
     await db
       .insert(conversationsTable)
@@ -230,16 +270,17 @@ router.post("/webhook/twilio", async (req, res) => {
           colony: null,
           colonyAddress: null,
           unitNumber: null,
+          items: null,
           updatedAt: new Date(),
         },
       });
-    res.send(twimlResponse("Welcome to Fresh Pick Dry Cleaning!\n\nWhat is your full name?"));
+    res.send(twimlResponse("Welcome to Fresh Pick Dry Cleaning! 👔\n\nWhat is your full name?"));
     return;
   }
 
+  // ── Load conversation ─────────────────────────────────────────────────────
   const [convo] = await db
-    .select()
-    .from(conversationsTable)
+    .select().from(conversationsTable)
     .where(eq(conversationsTable.phoneNumber, from))
     .limit(1);
 
@@ -250,93 +291,183 @@ router.post("/webhook/twilio", async (req, res) => {
 
   const step = convo.step;
 
+  // ── name ──────────────────────────────────────────────────────────────────
   if (step === "name") {
-    await db
-      .update(conversationsTable)
+    await db.update(conversationsTable)
       .set({ name: raw, step: "town", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
-    res.send(
-      twimlResponse(
-        `Thanks, ${raw}! Which town are you in?\n\nReply with the number:\n\n${townList()}`
-      )
-    );
+    res.send(twimlResponse(
+      `Thanks, ${raw}! Which town are you in?\n\nReply with the number:\n\n${townList()}`
+    ));
     return;
   }
 
+  // ── town ──────────────────────────────────────────────────────────────────
   if (step === "town") {
-    const num = parseInt(text.trim());
+    const num = parseInt(text);
     if (isNaN(num) || num < 1 || num > TOWNS.length) {
-      res.send(
-        twimlResponse(
-          `Please reply with a number between 1 and ${TOWNS.length}.\n\n${townList()}`
-        )
-      );
+      res.send(twimlResponse(`Please reply with a number between 1 and ${TOWNS.length}.\n\n${townList()}`));
       return;
     }
     const selectedTown = TOWNS[num - 1]!;
-    await db
-      .update(conversationsTable)
+    await db.update(conversationsTable)
       .set({ town: selectedTown, step: "colony", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
     res.send(twimlResponse(`${selectedTown} — got it!\n\nWhat is the name of your colony or neighborhood?`));
     return;
   }
 
+  // ── colony ────────────────────────────────────────────────────────────────
   if (step === "colony") {
-    await db
-      .update(conversationsTable)
+    await db.update(conversationsTable)
       .set({ colony: raw, step: "colonyAddress", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
     res.send(twimlResponse("What is the street address of your colony? (e.g. 123 Main St)"));
     return;
   }
 
+  // ── colonyAddress ─────────────────────────────────────────────────────────
   if (step === "colonyAddress") {
-    await db
-      .update(conversationsTable)
+    await db.update(conversationsTable)
       .set({ colonyAddress: raw, step: "unit", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
     res.send(twimlResponse("What is your unit or house number?"));
     return;
   }
 
+  // ── unit ──────────────────────────────────────────────────────────────────
   if (step === "unit") {
-    await db
-      .update(conversationsTable)
+    await db.update(conversationsTable)
       .set({ unitNumber: raw, step: "gate", updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
-    res.send(
-      twimlResponse(
-        'Almost done! Does your building have a front gate?\nIf yes, reply with the code or access instructions.\nIf no, just reply "no".'
-      )
-    );
+    res.send(twimlResponse(
+      'Does your building have a gate?\n\nIf yes, reply with the code or access instructions.\nIf no, just reply "no".'
+    ));
     return;
   }
 
+  // ── gate → start item iteration ───────────────────────────────────────────
   if (step === "gate") {
     const gateAccess = text === "no" ? null : raw;
-    const orderNumber = generateOrderNumber();
+    await db.update(conversationsTable)
+      .set({
+        step: itemStep(0),
+        items: JSON.stringify({ __gate: gateAccess ?? "" }),
+        updatedAt: new Date(),
+      })
+      .where(eq(conversationsTable.phoneNumber, from));
+    res.send(twimlResponse(
+      `Great! Now let's build your order.\n\nFor each item, reply with how many you're bringing. Reply 0 to skip.\n\n${itemPrompt(0)}`
+    ));
+    return;
+  }
 
-    await db.insert(ordersTable).values({
-      orderNumber,
-      phoneNumber: from,
-      name: convo.name!,
-      town: convo.town!,
-      colony: convo.colony!,
-      colonyAddress: convo.colonyAddress ?? null,
-      unitNumber: convo.unitNumber!,
-      gateAccess,
-      status: "pending",
-    });
+  // ── item_N steps ──────────────────────────────────────────────────────────
+  if (isItemStep(step)) {
+    const index = itemIndexFromStep(step);
+    const qty = parseInt(text);
 
-    await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+    if (isNaN(qty) || qty < 0) {
+      res.send(twimlResponse(`Please reply with a number (0 to skip).\n\n${itemPrompt(index)}`));
+      return;
+    }
 
-    const gateMsg = gateAccess ? `Gate: ${gateAccess}` : "No gate access needed.";
-    res.send(
-      twimlResponse(
-        `Pickup confirmed!\n\nOrder: ${orderNumber}\nName: ${convo.name}\nTown: ${convo.town}\nColony: ${convo.colony}\nAddress: ${convo.colonyAddress}\nUnit: ${convo.unitNumber}\n${gateMsg}\n\nWe'll be in touch soon!`
-      )
-    );
+    // Update item counts
+    const current = parseItems(convo.items);
+    if (qty > 0) {
+      current[ITEMS[index]!] = qty;
+    }
+
+    const nextIndex = index + 1;
+
+    if (nextIndex < ITEMS.length) {
+      // Move to next item
+      await db.update(conversationsTable)
+        .set({ items: JSON.stringify(current), step: itemStep(nextIndex), updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(itemPrompt(nextIndex)));
+    } else {
+      // All items done — go to confirmation
+      await db.update(conversationsTable)
+        .set({ items: JSON.stringify(current), step: "items_confirm", updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+
+      const itemsStr = formatItemsList(JSON.stringify(current));
+      const hasItems = Object.entries(current).filter(([k, v]) => k !== "__gate" && v > 0).length > 0;
+
+      if (!hasItems) {
+        res.send(twimlResponse(
+          `You haven't selected any items.\n\nReply EDIT to go back and add items, or text "clean" to start over.`
+        ));
+      } else {
+        res.send(twimlResponse(
+          `Here's your order:\n\n${itemsStr}\n\nReply CONFIRM to place your order, or EDIT to make changes.`
+        ));
+      }
+    }
+    return;
+  }
+
+  // ── items_confirm ─────────────────────────────────────────────────────────
+  if (step === "items_confirm") {
+    if (text === "edit") {
+      // Restart item iteration from item 0, keep existing counts
+      await db.update(conversationsTable)
+        .set({ step: itemStep(0), updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Let's update your order. Reply with the new quantity for each item (0 to remove).\n\n${itemPrompt(0)}`
+      ));
+      return;
+    }
+
+    if (text === "confirm") {
+      const itemsData = parseItems(convo.items);
+
+      // Extract gate from __gate key
+      const gateAccess = ("__gate" in itemsData && typeof itemsData["__gate"] === "string")
+        ? (itemsData["__gate"] as string) || null
+        : null;
+      delete itemsData["__gate"];
+
+      const cleanItems = JSON.stringify(itemsData);
+      const orderNumber = generateOrderNumber();
+
+      const newOrder = {
+        orderNumber,
+        phoneNumber: from,
+        name: convo.name!,
+        town: convo.town!,
+        colony: convo.colony!,
+        colonyAddress: convo.colonyAddress ?? null,
+        unitNumber: convo.unitNumber!,
+        gateAccess,
+        items: cleanItems,
+        status: "pending" as const,
+      };
+
+      await db.insert(ordersTable).values(newOrder);
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+
+      const confirmMsg = buildConfirmationSms({
+        orderNumber,
+        name: convo.name!,
+        town: convo.town!,
+        colony: convo.colony!,
+        colonyAddress: convo.colonyAddress ?? null,
+        unitNumber: convo.unitNumber!,
+        items: cleanItems,
+      });
+
+      res.send(twimlResponse(confirmMsg));
+      return;
+    }
+
+    // Unknown reply at confirm step
+    const itemsStr = formatItemsList(convo.items);
+    res.send(twimlResponse(
+      `Please reply CONFIRM to place your order or EDIT to make changes.\n\nYour order:\n${itemsStr}`
+    ));
     return;
   }
 

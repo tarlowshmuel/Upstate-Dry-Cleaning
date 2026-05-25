@@ -21,6 +21,8 @@ export interface Order {
   unitNumber: string;
   /** @nullable */
   gateAccess?: string | null;
+  /** @nullable */
+  items?: string | null;
   status: string;
   createdAt: string;
 }

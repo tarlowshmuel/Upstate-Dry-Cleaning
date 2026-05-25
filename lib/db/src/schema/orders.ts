@@ -12,6 +12,7 @@ export const ordersTable = pgTable("orders", {
   colonyAddress: text("colony_address"),
   unitNumber: text("unit_number").notNull(),
   gateAccess: text("gate_access"),
+  items: text("items"),
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

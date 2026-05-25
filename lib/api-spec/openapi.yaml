@@ -95,6 +95,8 @@ components:
           type: string
         gateAccess:
           type: ["string", "null"]
+        items:
+          type: ["string", "null"]
         status:
           type: string
         createdAt:

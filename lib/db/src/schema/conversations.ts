@@ -11,6 +11,7 @@ export const conversationsTable = pgTable("conversations", {
   colony: text("colony"),
   colonyAddress: text("colony_address"),
   unitNumber: text("unit_number"),
+  items: text("items"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

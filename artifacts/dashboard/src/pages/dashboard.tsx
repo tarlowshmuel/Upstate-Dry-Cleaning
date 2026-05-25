@@ -23,7 +23,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package } from "lucide-react";
+
+function parseItems(json: string | null | undefined): Record<string, number> {
+  if (!json) return {};
+  try { return JSON.parse(json) as Record<string, number>; }
+  catch { return {}; }
+}
+
+function ItemsList({ json }: { json: string | null | undefined }) {
+  const items = parseItems(json);
+  const entries = Object.entries(items).filter(([, qty]) => qty > 0);
+  if (entries.length === 0) return <span className="text-muted-foreground/40 text-sm">—</span>;
+  return (
+    <ul className="space-y-0.5">
+      {entries.map(([name, qty]) => (
+        <li key={name} className="text-xs text-foreground flex items-center gap-1.5">
+          <span className="font-semibold text-primary">{qty}×</span>
+          <span>{name}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 const STATUSES = [
   { value: "pending", label: "Pending" },
@@ -180,7 +202,7 @@ export default function Dashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/60">
-                      {["ID", "Order", "Customer", "Location", "Access", "Status", "Date"].map((h) => (
+                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Date"].map((h) => (
                         <TableHead key={h} className="font-medium text-xs uppercase tracking-wider text-muted-foreground py-3">
                           {h}
                         </TableHead>
@@ -232,6 +254,14 @@ export default function Dashboard() {
                               <MapPin className="w-3 h-3 text-primary/60" />
                               {order.town}
                             </span>
+                          </div>
+                        </TableCell>
+
+                        {/* Items */}
+                        <TableCell className="py-4">
+                          <div className="flex items-start gap-1.5">
+                            <Package className="w-3 h-3 text-primary/60 mt-0.5 shrink-0" />
+                            <ItemsList json={order.items} />
                           </div>
                         </TableCell>
 
