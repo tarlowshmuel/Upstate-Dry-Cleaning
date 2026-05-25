@@ -59,6 +59,17 @@ const DAY_NUM: Record<string, number> = {
 const DRIVER_START = process.env.DRIVER_START_ADDRESS ?? "458 Riverside Drive, Fallsburg, NY";
 const DRIVER_END = process.env.DRY_CLEANERS_ADDRESS ?? DRIVER_START;
 
+const PAYMENT_PHONE = "(929) 345-0940";
+const PUBLIC_URL = process.env.PUBLIC_URL ?? "https://twilio-connect-shmueltarlow.replit.app";
+const TERMS_URL = `${PUBLIC_URL}/legal`;
+
+function welcomeIntro(): string {
+  return [
+    `💵 Payment: Cash or Zelle to ${PAYMENT_PHONE} on delivery.`,
+    `📄 Terms: ${TERMS_URL}`,
+  ].join("\n");
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function twimlResponse(message: string): string {
   const twiml = new twilio.twiml.MessagingResponse();
@@ -155,10 +166,11 @@ function formatOrder(o: OrderRow): string {
   const gate = o.gateAccess ? `Gate: ${o.gateAccess}` : "No gate";
   const addr = o.colonyAddress ? `${o.colonyAddress}, ` : "";
   const notesLine = o.notes ? `\n📝 Notes: ${o.notes}` : "";
+  const ticketsLine = `\n🎫 Tickets: ${o.cleanerTickets ?? "(not set)"}`;
   const itemsStr = o.items ?? "(none)";
   const pickup = o.pickupDate ? `Pickup: ${o.pickupDate}\n` : "";
   const paid = o.paid ? "PAID ✓" : "UNPAID";
-  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
+  return `#${o.id} | ${o.orderNumber}\n${o.name} | ${o.phoneNumber}\n${addr}${o.colony}, ${o.town}\nUnit: ${o.unitNumber} | ${gate}\nItems: ${itemsStr}${ticketsLine}${notesLine}\n${pickup}Status: ${o.status} | ${paid}`;
 }
 
 // ─── Admin Menu System ─────────────────────────────────────────────────────────
@@ -197,6 +209,7 @@ function adminUpdateMenu(order: OrderRow): string {
     `3. Mark missed`,
     `4. Mark paid`,
     `5. Mark unpaid`,
+    `6. Set cleaner ticket #s`,
     ``,
     `0. Back to menu`,
   ].join("\n");
@@ -357,12 +370,15 @@ async function searchOrders(rawQuery: string): Promise<OrderRow[]> {
         .where(eq(ordersTable.id, parseInt(q, 10))).limit(1);
       if (byId.length) return byId;
     }
-    // Strip non-digits from phone column and match a substring.
-    const byPhone = await db.select().from(ordersTable)
-      .where(sql`regexp_replace(${ordersTable.phoneNumber}, '\\D', '', 'g') LIKE ${'%' + q + '%'}`)
+    // Match phone fragment OR cleaner-ticket fragment.
+    const byDigits = await db.select().from(ordersTable)
+      .where(or(
+        sql`regexp_replace(${ordersTable.phoneNumber}, '\\D', '', 'g') LIKE ${'%' + q + '%'}`,
+        ilike(ordersTable.cleanerTickets, `%${q}%`),
+      ))
       .orderBy(desc(ordersTable.createdAt))
       .limit(20);
-    return byPhone;
+    return byDigits;
   }
 
   // Text: case-insensitive name OR colony match.
@@ -541,13 +557,39 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       await setAdminStep(from, "admin_main");
       return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
     }
+    if (text === "6") {
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      if (!order) {
+        await setAdminStep(from, "admin_main");
+        return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      await setAdminStep(from, "admin_update_tickets", String(id));
+      const current = order.cleanerTickets ? `\n\nCurrent: ${order.cleanerTickets}` : "";
+      return `🎫 Enter cleaner ticket #s for order #${id} (${order.name}).\n\n` +
+             `One per item, comma-separated.\nExample: 4123, 4124, 4125\n\n` +
+             `Text "clear" to remove, or "0" to cancel.${current}`;
+    }
     if (!["1", "2", "3", "4", "5"].includes(text)) {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      return `Please reply 1-5, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
+      return `Please reply 1-6, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
     const result = await actionApplyUpdate(id, text);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Update flow: capturing cleaner ticket numbers ──────────────────────────
+  if (step === "admin_update_tickets") {
+    const id = parseInt(session?.items ?? "", 10);
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
+    }
+    const value = text === "clear" || text === "none" ? null : raw;
+    await db.update(ordersTable).set({ cleanerTickets: value }).where(eq(ordersTable.id, id));
+    await setAdminStep(from, "admin_main");
+    const summary = value ? `Tickets set to: ${value}` : `Tickets cleared.`;
+    return `✅ Order #${id} — ${summary}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
   // ── Stats submenu ──────────────────────────────────────────────────────────
@@ -591,7 +633,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     }
     case "7": {
       await setAdminStep(from, "admin_lookup");
-      return `🔍 Search for an order — reply with any of:\n  • Customer name (e.g. "Sarah")\n  • Phone digits (e.g. "5559876")\n  • Order ID (e.g. "5")\n\n0. Back to menu`;
+      return `🔍 Search for an order — reply with any of:\n  • Customer name (e.g. "Sarah")\n  • Phone digits (e.g. "9293450")\n  • Order ID (e.g. "5")\n  • Cleaner ticket # (e.g. "4123")\n\n0. Back to menu`;
     }
     case "8": {
       await setAdminStep(from, "admin_update_search");
@@ -632,8 +674,6 @@ function buildConfirmationSms(order: {
     `📅 Drop-off by: ${formatLongDate(dropoff)}`,
     ``,
     `⏰ Order cutoff: 12:00 AM the night before your pickup day.`,
-    ``,
-    `💵 Payment: Cash or Zelle to (845) 606-0022 on delivery.`,
     ``,
     `📋 Please have your items bagged and ready by 10:00 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`,
   ].join("\n");
@@ -702,6 +742,7 @@ router.post("/webhook/twilio", async (req, res) => {
       const gateLine = lastOrder.gateAccess ? `Gate: ${lastOrder.gateAccess}` : "No gate";
       res.send(twimlResponse(
         `Welcome back, ${firstName}! 👋\n\n` +
+        `${welcomeIntro()}\n\n` +
         `Use your saved address?\n\n` +
         `${lastOrder.colonyAddress ?? ""}\n` +
         `${lastOrder.colony}, Unit ${lastOrder.unitNumber}\n` +
@@ -724,7 +765,11 @@ router.post("/webhook/twilio", async (req, res) => {
           updatedAt: new Date(),
         },
       });
-    res.send(twimlResponse("Welcome to Upstate Dry Cleaning! 👔\n\nWhat is your full name?"));
+    res.send(twimlResponse(
+      `Welcome to Upstate Dry Cleaning! 👔\n\n` +
+      `${welcomeIntro()}\n\n` +
+      `What is your full name?`
+    ));
     return;
   }
 

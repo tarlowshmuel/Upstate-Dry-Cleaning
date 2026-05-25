@@ -14,6 +14,7 @@ export const ordersTable = pgTable("orders", {
   gateAccess: text("gate_access"),
   items: text("items"),
   notes: text("notes"),
+  cleanerTickets: text("cleaner_tickets"),
   pickupDate: date("pickup_date"),
   status: text("status").notNull().default("pending"),
   paid: boolean("paid").notNull().default(false),
