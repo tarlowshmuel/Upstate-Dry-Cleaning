@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { ordersTable } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { nextOrderNumber } from "../lib/order-number";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -37,11 +38,6 @@ const createOrderSchema = z.object({
     .optional(),
 });
 
-function generateOrderNumber(): string {
-  const num = Math.floor(10000 + Math.random() * 90000);
-  return `DRY-${num}`;
-}
-
 router.post("/orders", async (req, res) => {
   const parsed = createOrderSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -51,7 +47,7 @@ router.post("/orders", async (req, res) => {
   const d = parsed.data;
 
   for (let attempt = 0; attempt < 6; attempt++) {
-    const orderNumber = generateOrderNumber();
+    const orderNumber = await nextOrderNumber();
     try {
       const [created] = await db
         .insert(ordersTable)

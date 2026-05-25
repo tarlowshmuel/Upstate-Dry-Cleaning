@@ -3,6 +3,7 @@ import twilio from "twilio";
 import { db } from "@workspace/db";
 import { conversationsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
+import { nextOrderNumber } from "../lib/order-number";
 
 const router = Router();
 
@@ -83,11 +84,6 @@ function twimlResponse(message: string): string {
   const twiml = new twilio.twiml.MessagingResponse();
   twiml.message(message);
   return twiml.toString();
-}
-
-function generateOrderNumber(): string {
-  const num = Math.floor(10000 + Math.random() * 90000);
-  return `DRY-${num}`;
 }
 
 function todayStart(): Date {
@@ -965,7 +961,7 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
       return;
     }
 
-    const orderNumber = generateOrderNumber();
+    const orderNumber = await nextOrderNumber();
     await db.insert(ordersTable).values({
       orderNumber,
       phoneNumber: from,
