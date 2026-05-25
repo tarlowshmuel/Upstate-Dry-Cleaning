@@ -3,9 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
-const BUSINESS_NAME = "Fresh Pick Dry Cleaning";
+const BUSINESS_NAME = "Dry Cleaning Service";
 const SERVICE_AREA = "Sullivan County, NY";
-const CONTACT_EMAIL = "contact@freshpickdrycleaning.com";
+const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
 const LAST_UPDATED = "May 25, 2026";
 
 export default function Legal() {
@@ -187,13 +187,64 @@ export default function Legal() {
             <section>
               <h2 className="font-semibold text-base mb-2">4. Garment care &amp; liability</h2>
               <p>
-                We handle your garments with reasonable care, but we are not liable
-                for normal wear, pre-existing damage, items left in pockets, or
-                damage caused by manufacturer defects or care label inaccuracies.
-                Our maximum liability for any lost or damaged item is limited to ten
-                (10) times the cleaning charge for that item, not to exceed its fair
-                market value. Notify us of any concern within 48 hours of delivery.
+                We handle your garments with reasonable care and follow generally
+                accepted industry practice (consistent with the Drycleaning &amp;
+                Laundry Institute's Fair Claims Guide). By using the service, you
+                acknowledge and agree to the following:
               </p>
+              <ul className="list-disc pl-5 space-y-1 mt-2">
+                <li>
+                  <span className="font-medium">Items not accepted at our risk.</span>{" "}
+                  We are not responsible for loss or damage to leather, suede, fur,
+                  wedding gowns, heirloom or antique garments, or any item lacking a
+                  care label, unless we expressly accept it in writing.
+                </li>
+                <li>
+                  <span className="font-medium">Trim, buttons, and embellishments.</span>{" "}
+                  We are not responsible for damage to buttons, zippers, belts,
+                  buckles, sequins, beads, appliques, or other trim that may not
+                  withstand normal cleaning.
+                </li>
+                <li>
+                  <span className="font-medium">Pre-existing conditions.</span>{" "}
+                  We are not responsible for pre-existing damage; weakened, worn,
+                  faded, or sun-damaged fabric; shrinkage, stretching, color loss,
+                  or bleeding inherent to the fabric or dye; or for results caused
+                  by inaccurate or missing care labels or manufacturer defects.
+                </li>
+                <li>
+                  <span className="font-medium">Items left in pockets.</span> Please
+                  check all pockets before drop-off. We are not responsible for
+                  cash, jewelry, electronics, keys, or any other item left in
+                  garments.
+                </li>
+                <li>
+                  <span className="font-medium">Stain &amp; odor removal.</span> We
+                  will make reasonable efforts to remove stains and odors, but
+                  complete removal cannot be guaranteed.
+                </li>
+                <li>
+                  <span className="font-medium">Claim window.</span> All claims for
+                  loss or damage must be reported to us in writing within seven (7)
+                  days of delivery. Claims made after this window may not be
+                  honored.
+                </li>
+                <li>
+                  <span className="font-medium">Maximum liability.</span> Our
+                  maximum liability for any lost or damaged item is limited to the
+                  lesser of (a) ten (10) times the cleaning charge for that item or
+                  (b) the depreciated fair market value of the item at the time of
+                  loss, calculated using the Fair Claims Guide depreciation
+                  schedule. We are not liable for incidental, consequential, or
+                  sentimental damages.
+                </li>
+                <li>
+                  <span className="font-medium">Unclaimed garments.</span> Garments
+                  not retrieved or accepted at delivery within sixty (60) days may
+                  be donated or otherwise disposed of without further notice or
+                  liability.
+                </li>
+              </ul>
             </section>
 
             <section>
@@ -218,9 +269,13 @@ export default function Legal() {
             <section>
               <h2 className="font-semibold text-base mb-2">7. Changes to these terms</h2>
               <p>
-                We may update these terms from time to time. Continued use of the
-                service after changes are posted constitutes acceptance of the
-                updated terms.
+                {BUSINESS_NAME} may change, update, or replace these terms — and the
+                Privacy Policy above — at any time, at our sole discretion, with or
+                without prior notice. The current version is always posted on this
+                page, and the "Last updated" date at the top reflects the most
+                recent revision. Your continued use of the service after any change
+                constitutes your acceptance of the updated terms. If you do not
+                agree to a change, your sole remedy is to stop using the service.
               </p>
             </section>
 
