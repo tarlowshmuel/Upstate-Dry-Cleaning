@@ -18,6 +18,7 @@ export const ordersTable = pgTable("orders", {
   pickupDate: date("pickup_date"),
   status: text("status").notNull().default("pending"),
   paid: boolean("paid").notNull().default(false),
+  referralCreditApplied: boolean("referral_credit_applied").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -203,6 +203,14 @@ router.patch("/orders/:id/paid", async (req, res) => {
     return;
   }
 
+  // Side effect: when an order is marked paid, qualify any pending referral
+  // whose referredPhone matches this order's customer (same hook as the SMS
+  // admin flow — dashboard/SMS parity).
+  if (paid === true) {
+    const { qualifyReferralsFor } = await import("../lib/referrals");
+    await qualifyReferralsFor(updated.phoneNumber, updated.id);
+  }
+
   res.json(updated);
 });
 

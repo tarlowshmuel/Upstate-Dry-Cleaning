@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import twilio from "twilio";
 import { db } from "@workspace/db";
-import { conversationsTable, ordersTable } from "@workspace/db/schema";
+import { conversationsTable, ordersTable, referralsTable } from "@workspace/db/schema";
 import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
 
@@ -76,6 +76,13 @@ const DRIVER_END =
   process.env.DRY_CLEANERS_ADDRESS ?? "16 Thompson Square, Monticello, NY 12701";
 
 const PAYMENT_PHONE = "(929) 345-0940";
+
+// ─── Referral Program ────────────────────────────────────────────────────────
+// Customer earns one $30 free pickup credit per 3 referred customers who
+// complete a first paid pickup. Cap of 2 redemptions (i.e. 6 qualified referrals).
+const REFERRAL_THRESHOLD = 3;
+const REFERRAL_CREDIT_USD = 30;
+const REFERRAL_MAX_REDEMPTIONS = 2;
 const PUBLIC_URL = process.env.PUBLIC_URL ?? "https://twilio-connect-shmueltarlow.replit.app";
 const TERMS_URL = `${PUBLIC_URL}/legal`;
 
@@ -83,8 +90,20 @@ function welcomeIntro(): string {
   return [
     `⏰ Orders must be placed by 12:00 AM (midnight) the night before your pickup day.`,
     `💵 Payment: Cash or Zelle to ${PAYMENT_PHONE} on delivery.`,
+    `🎁 Refer ${REFERRAL_THRESHOLD} neighbors who place a first paid pickup and get a FREE pickup (up to $${REFERRAL_CREDIT_USD}). Text "refer" to add one.`,
     `📄 Terms: ${TERMS_URL}`,
   ].join("\n");
+}
+
+// E.164 normalization (matches existing inline logic for admin new-order phone step).
+function normalizePhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits || digits.length < 10) return null;
+  if (raw.trim().startsWith("+")) return `+${digits}`;
+  // US-default: strip leading "1" if present, then re-add country code.
+  const ten = digits.replace(/^1/, "");
+  if (ten.length !== 10) return null;
+  return `+1${ten}`;
 }
 
 function askForNotesMessage(): string {
@@ -230,6 +249,7 @@ const ADMIN_MAIN_MENU = [
   'Filter: "filter status pending|picked_up|delivered|missed|all"',
   '        "filter paid yes|no|all"',
   'Clear:  "reset"',
+  'Credit: "credit <orderId>"  (apply a referral credit)',
   'Reply with a number (or "menu" anytime).',
 ].join("\n");
 
@@ -618,6 +638,41 @@ function formatMatchList(matches: OrderRow[]): string {
   }).join("\n");
 }
 
+// ─── Referral Helpers ────────────────────────────────────────────────────────
+// Stats + qualification logic live in lib/referrals so the dashboard's PATCH
+// /orders/:id/paid endpoint can share the qualification hook.
+import {
+  getReferralStats,
+  qualifyReferralsFor,
+  applyReferralCredit,
+  type ReferralStats,
+} from "../lib/referrals";
+
+function formatReferralStatus(stats: ReferralStats): string {
+  const lines = [
+    `🎁 YOUR REFERRALS`,
+    ``,
+    `Referred: ${stats.total} (${stats.qualified} qualified, ${stats.pending} pending)`,
+    `Credits earned: ${stats.creditsEarned} of ${REFERRAL_MAX_REDEMPTIONS} max`,
+    `Credits used: ${stats.creditsUsed}`,
+    `Credits available: ${stats.creditsAvailable} × $${REFERRAL_CREDIT_USD} FREE pickup`,
+    ``,
+  ];
+  if (stats.atCap) {
+    lines.push(`You've hit the lifetime cap — thanks for spreading the word! 🙌`);
+  } else {
+    const nextThreshold = (Math.floor(stats.qualified / REFERRAL_THRESHOLD) + 1) * REFERRAL_THRESHOLD;
+    const need = Math.max(0, nextThreshold - stats.qualified);
+    if (need === 0) {
+      lines.push(`Your next credit unlocks as soon as one more referred neighbor completes their first paid pickup.`);
+    } else {
+      lines.push(`${need} more qualified referral${need !== 1 ? "s" : ""} = your next free pickup.`);
+    }
+    lines.push(``, `Text "refer" to add another, or "clean" to schedule a pickup.`);
+  }
+  return lines.join("\n");
+}
+
 // ─── Customer Notifications ───────────────────────────────────────────────────
 // Returns a short suffix to append to the admin reply, indicating whether the
 // customer was notified. Never throws — SMS failures must not block status changes.
@@ -703,6 +758,11 @@ async function actionApplyUpdate(id: number, choice: string): Promise<string> {
   if (paidUpdate !== null) {
     await db.update(ordersTable).set({ paid: paidUpdate }).where(eq(ordersTable.id, id));
     // Paid/unpaid is internal bookkeeping — no customer notification.
+    // Side effect: when an order is marked paid, qualify any pending referral
+    // whose referredPhone matches this order's customer.
+    if (paidUpdate === true) {
+      try { await qualifyReferralsFor(order.phoneNumber, id); } catch { /* best-effort */ }
+    }
     return baseReply;
   }
 
@@ -751,6 +811,36 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     resetPrefs(from);
     await setAdminStep(from, "admin_main");
     return `✅ Filters reset to defaults.\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Apply a referral credit to an order ───────────────────────────────────
+  // Syntax: "credit <orderId>"  (e.g. "credit 17" or "credit DRY-2014")
+  const creditMatch = text.match(/^credit\s+(?:dry-)?(\d+)$/);
+  if (creditMatch) {
+    const orderId = parseInt(creditMatch[1]!, 10);
+    const result = await applyReferralCredit(orderId);
+    await setAdminStep(from, "admin_main");
+    if (!result.ok) return `❌ ${result.reason}\n\n${ADMIN_MAIN_MENU}`;
+    const o = result.order;
+    // Best-effort customer SMS — same envelope vars as notifyCustomer.
+    try {
+      const sid = process.env.TWILIO_ACCOUNT_SID;
+      const token = process.env.TWILIO_AUTH_TOKEN;
+      const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+      if (sid && token && fromNumber) {
+        const client = twilio(sid, token);
+        await client.messages.create({
+          to: o.phoneNumber, from: fromNumber,
+          body: `🎁 Good news! Order #${o.orderNumber} is FREE — covered by a referral credit you earned. No payment needed. Thanks for spreading the word!`,
+        });
+      }
+    } catch { /* best-effort */ }
+    return (
+      `✅ Referral credit applied to #${o.orderNumber} (${o.name}).\n` +
+      `Order marked PAID. Customer notified.\n` +
+      `Remaining credits for this customer: ${result.remaining}.\n\n` +
+      `${ADMIN_MAIN_MENU}`
+    );
   }
 
   // Load admin session (if any)
@@ -1304,6 +1394,40 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
     return;
   }
 
+  // ── Referral commands (intercept before "clean" so they can't be hijacked) ──
+  if (text === "credits" || text === "referrals" || text === "my referrals") {
+    const stats = await getReferralStats(from);
+    res.send(twimlResponse(formatReferralStatus(stats)));
+    return;
+  }
+  if (text === "refer") {
+    const stats = await getReferralStats(from);
+    if (stats.atCap) {
+      res.send(twimlResponse(
+        `🙌 You've already hit the lifetime cap of ${REFERRAL_MAX_REDEMPTIONS} free pickups from referrals. ` +
+        `Text "credits" to see your status.`,
+      ));
+      return;
+    }
+    await db.insert(conversationsTable)
+      .values({ phoneNumber: from, step: "refer_name", items: "{}" })
+      .onConflictDoUpdate({
+        target: conversationsTable.phoneNumber,
+        set: {
+          step: "refer_name",
+          name: null, town: null, colony: null, colonyAddress: null,
+          unitNumber: null, gateAccess: null, items: "{}",
+          updatedAt: new Date(),
+        },
+      });
+    res.send(twimlResponse(
+      `🎁 Add a referral!\n\n` +
+      `Refer ${REFERRAL_THRESHOLD} neighbors who complete a first paid pickup = one FREE pickup (up to $${REFERRAL_CREDIT_USD}).\n\n` +
+      `What's the neighbor's full name? (or text "cancel" to stop)`,
+    ));
+    return;
+  }
+
   // ── Start fresh ───────────────────────────────────────────────────────────
   if (text === "clean") {
     // Returning customer? Look up the most recent order for this phone.
@@ -1387,6 +1511,7 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
   // if they're already mid-order-flow (returning_confirm/name/town/etc.).
   const orderFlowSteps = new Set([
     "returning_confirm", "name", "town", "colony", "location_details", "notes",
+    "refer_name", "refer_phone", "refer_confirm",
   ]);
   if (!convo || !orderFlowSteps.has(convo.step ?? "")) {
     if (convo?.step === "reschedule_offer") {
@@ -1627,6 +1752,117 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
       pickupDate,
     })));
     return;
+  }
+
+  // ── Referral subflow: refer_name → refer_phone → refer_confirm ───────────
+  if (step === "refer_name" || step === "refer_phone" || step === "refer_confirm") {
+    if (text === "cancel" || text === "stop" || text === "0") {
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(`No problem — referral cancelled. Text "refer" anytime to try again.`));
+      return;
+    }
+    interface ReferralScratch { name?: string; phone?: string }
+    let scratch: ReferralScratch = {};
+    try { scratch = JSON.parse(convo.items ?? "{}") as ReferralScratch; } catch { /* default {} */ }
+
+    if (step === "refer_name") {
+      if (raw.trim().length < 2) {
+        res.send(twimlResponse(`Please send the neighbor's full name, or "cancel" to stop.`));
+        return;
+      }
+      scratch.name = raw.trim();
+      await db.update(conversationsTable)
+        .set({ step: "refer_phone", items: JSON.stringify(scratch), updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Got it — ${scratch.name}. What's their phone number? (e.g. 845-555-1234)\n\nOr text "cancel" to stop.`,
+      ));
+      return;
+    }
+
+    if (step === "refer_phone") {
+      const phone = normalizePhone(raw);
+      if (!phone) {
+        res.send(twimlResponse(`That doesn't look like a valid phone. Please send 10 digits (e.g. 845-555-1234), or "cancel" to stop.`));
+        return;
+      }
+      if (phone === from) {
+        res.send(twimlResponse(`That's your own number 🙂 — please send a neighbor's phone, or "cancel" to stop.`));
+        return;
+      }
+      scratch.phone = phone;
+      await db.update(conversationsTable)
+        .set({ step: "refer_confirm", items: JSON.stringify(scratch), updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Please confirm your referral:\n\n` +
+        `Name: ${scratch.name}\n` +
+        `Phone: ${scratch.phone}\n\n` +
+        `Reply YES to save, NO to cancel.`,
+      ));
+      return;
+    }
+
+    if (step === "refer_confirm") {
+      if (text === "no" || text === "n") {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`Cancelled. Text "refer" anytime to try again.`));
+        return;
+      }
+      if (text !== "yes" && text !== "y") {
+        res.send(twimlResponse(`Please reply YES to save the referral, NO to cancel.`));
+        return;
+      }
+      if (!scratch.name || !scratch.phone) {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`Lost track of the referral — please start over by texting "refer".`));
+        return;
+      }
+
+      // Snapshot the referrer's colony/town from their most recent order.
+      const [lastOrder] = await db.select()
+        .from(ordersTable)
+        .where(eq(ordersTable.phoneNumber, from))
+        .orderBy(desc(ordersTable.id)).limit(1);
+
+      try {
+        await db.insert(referralsTable).values({
+          referrerPhone: from,
+          referredPhone: scratch.phone,
+          referredName: scratch.name,
+          referredColony: lastOrder?.colony ?? null,
+          referredTown: lastOrder?.town ?? null,
+        });
+      } catch (err) {
+        // Narrow to Postgres unique-violation (23505) — anything else is a
+        // real DB error and should not masquerade as "already referred".
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "23505") {
+          await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+          res.send(twimlResponse(
+            `That number has already been referred (either by you earlier or by another customer). ` +
+            `It won't count twice. Text "refer" to add a different neighbor.`,
+          ));
+          return;
+        }
+        req.log.error({ err, referrerPhone: from }, "referral insert failed");
+        res.send(twimlResponse(
+          `Sorry — something went wrong saving your referral. Please try again in a moment, or text "menu".`,
+        ));
+        return;
+      }
+
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      const stats = await getReferralStats(from);
+      const need = REFERRAL_THRESHOLD - (stats.qualified % REFERRAL_THRESHOLD);
+      res.send(twimlResponse(
+        `✅ Referral saved! ${scratch.name} is on your list.\n\n` +
+        `You have ${stats.total} referral${stats.total !== 1 ? "s" : ""} (${stats.qualified} qualified). ` +
+        `${need} more qualified = your next FREE pickup (up to $${REFERRAL_CREDIT_USD}).\n\n` +
+        `Text "credits" anytime to check status.`,
+      ));
+      return;
+    }
   }
 
   res.send(twimlResponse('Text "clean" to start a new pickup request.'));
