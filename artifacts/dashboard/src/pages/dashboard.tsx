@@ -5,7 +5,9 @@ import {
   useUpdateOrderPaid,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { format } from "date-fns";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Table,
   TableBody,
@@ -169,9 +171,26 @@ export default function Dashboard() {
     query: { queryKey: getListOrdersQueryKey() },
   });
 
+  const [range, setRange] = useState<"today" | "week" | "all">("all");
+
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
   const routeUrl = todaysPickups.length > 0 ? buildRouteUrl(todaysPickups) : null;
+
+  const filteredOrders = (orders ?? []).filter((o) => {
+    if (range === "all") return true;
+    if (!o.pickupDate) return false;
+    if (range === "today") return o.pickupDate === today;
+    if (range === "week") {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const min = new Date(now); min.setDate(min.getDate() - 7);
+      const max = new Date(now); max.setDate(max.getDate() + 7);
+      const p = new Date(o.pickupDate + "T00:00:00");
+      return p >= min && p <= max;
+    }
+    return true;
+  });
 
   const counts = orders
     ? {
@@ -240,13 +259,37 @@ export default function Dashboard() {
         {/* Orders table */}
         <Card className="border-border/60 shadow-sm overflow-hidden">
           <CardHeader className="bg-muted/30 border-b border-border/50 py-4">
-            <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
-              <Shirt className="w-4 h-4 text-primary" />
-              All Orders
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Use the ID number with SMS commands — e.g. <span className="font-mono text-foreground">customer 5</span> or <span className="font-mono text-foreground">mark completed 5</span>
-            </CardDescription>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="space-y-1">
+                <CardTitle className="text-base font-semibold flex items-center gap-2 font-serif">
+                  <Shirt className="w-4 h-4 text-primary" />
+                  Orders
+                  <span className="text-xs font-normal text-muted-foreground ml-1">
+                    ({filteredOrders.length}
+                    {orders && filteredOrders.length !== orders.length ? ` of ${orders.length}` : ""})
+                  </span>
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Use the ID number with SMS commands — e.g. <span className="font-mono text-foreground">customer 5</span> or <span className="font-mono text-foreground">mark completed 5</span>
+                </CardDescription>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={range}
+                onValueChange={(v) => v && setRange(v as "today" | "week" | "all")}
+                className="bg-background border border-border/60 rounded-md p-0.5"
+              >
+                <ToggleGroupItem value="today" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  Today
+                </ToggleGroupItem>
+                <ToggleGroupItem value="week" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  This Week
+                </ToggleGroupItem>
+                <ToggleGroupItem value="all" className="h-8 px-3 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  All Time
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
@@ -272,6 +315,16 @@ export default function Dashboard() {
                   When customers text <span className="font-mono text-foreground">"clean"</span> to your Twilio number, orders appear here instantly.
                 </p>
               </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-16 text-center">
+                <div className="w-14 h-14 bg-muted rounded-full flex items-center justify-center mb-4">
+                  <Inbox className="w-7 h-7 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2 font-serif">No orders in this range</h3>
+                <p className="text-muted-foreground max-w-sm text-sm">
+                  Try a wider time range to see more orders.
+                </p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -285,7 +338,7 @@ export default function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {orders.map((order) => (
+                    {filteredOrders.map((order) => (
                       <TableRow
                         key={order.id}
                         className={`transition-colors group border-b border-border/40 last:border-0 ${rowClass(order)}`}
