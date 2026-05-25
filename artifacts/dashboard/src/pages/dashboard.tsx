@@ -233,6 +233,19 @@ export default function Dashboard() {
               <Phone className="w-3.5 h-3.5 text-primary" />
               Text <span className="text-foreground font-semibold mx-1">"clean"</span> to your Twilio number
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/admin/logout`, {
+                  method: "POST",
+                  credentials: "include",
+                });
+                window.location.reload();
+              }}
+            >
+              Sign out
+            </Button>
           </div>
         </header>
 
