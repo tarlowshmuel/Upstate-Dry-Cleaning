@@ -9,6 +9,7 @@ export const ordersTable = pgTable("orders", {
   name: text("name").notNull(),
   town: text("town").notNull(),
   colony: text("colony").notNull(),
+  colonyAddress: text("colony_address"),
   unitNumber: text("unit_number").notNull(),
   gateAccess: text("gate_access"),
   status: text("status").notNull().default("pending"),

@@ -9,6 +9,7 @@ export const conversationsTable = pgTable("conversations", {
   name: text("name"),
   town: text("town"),
   colony: text("colony"),
+  colonyAddress: text("colony_address"),
   unitNumber: text("unit_number"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
