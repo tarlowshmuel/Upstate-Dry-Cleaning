@@ -63,6 +63,24 @@ const PAYMENT_PHONE = "(929) 345-0940";
 const PUBLIC_URL = process.env.PUBLIC_URL ?? "https://twilio-connect-shmueltarlow.replit.app";
 const TERMS_URL = `${PUBLIC_URL}/legal`;
 
+// Price list shown to customers right before they list their items.
+// Set to an empty array once you have real prices, then list "Item: $X" per line.
+const PRICE_LIST: Array<{ item: string; price: string }> = [
+  // Example (delete and replace once you have your real list):
+  // { item: "Suit (2-piece)", price: "$12" },
+  // { item: "Dress shirt",    price: "$4"  },
+  // { item: "Dress",          price: "$10" },
+  // { item: "Coat",           price: "$20" },
+];
+
+function priceListBlock(): string {
+  if (PRICE_LIST.length === 0) {
+    return `💲 Pricing: We'll confirm pricing with you on pickup. Standard dry cleaning rates apply.`;
+  }
+  const lines = PRICE_LIST.map((p) => `  • ${p.item} — ${p.price}`).join("\n");
+  return `💲 Price list:\n${lines}\n  • Other items — ask on pickup`;
+}
+
 function welcomeIntro(): string {
   return [
     `💵 Payment: Cash or Zelle to ${PAYMENT_PHONE} on delivery.`,
@@ -792,7 +810,9 @@ router.post("/webhook/twilio", async (req, res) => {
         .set({ step: "items", updatedAt: new Date() })
         .where(eq(conversationsTable.phoneNumber, from));
       res.send(twimlResponse(
-        `Great! What items are you sending in for cleaning?\n\nList them with quantities, for example:\n"2 suits, 3 dress shirts, 1 coat"`
+        `${priceListBlock()}\n\n` +
+        `What items are you sending in for cleaning?\n\n` +
+        `List them with quantities, for example:\n"2 suits, 3 dress shirts, 1 coat"`
       ));
       return;
     }
@@ -874,7 +894,7 @@ router.post("/webhook/twilio", async (req, res) => {
       })
       .where(eq(conversationsTable.phoneNumber, from));
     res.send(twimlResponse(
-      `What items are you sending in for cleaning?\n\nList them with quantities, for example:\n"2 suits, 3 dress shirts, 1 coat"`
+      `${priceListBlock()}\n\nWhat items are you sending in for cleaning?\n\nList them with quantities, for example:\n"2 suits, 3 dress shirts, 1 coat"`
     ));
     return;
   }
