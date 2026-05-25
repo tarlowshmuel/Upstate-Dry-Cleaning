@@ -657,6 +657,55 @@ router.post("/webhook/twilio", async (req, res) => {
 
   // ── Start fresh ───────────────────────────────────────────────────────────
   if (text === "clean") {
+    // Returning customer? Look up the most recent order for this phone.
+    const [lastOrder] = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.phoneNumber, from))
+      .orderBy(desc(ordersTable.id))
+      .limit(1);
+
+    if (lastOrder) {
+      await db
+        .insert(conversationsTable)
+        .values({
+          phoneNumber: from,
+          step: "returning_confirm",
+          name: lastOrder.name,
+          town: lastOrder.town,
+          colony: lastOrder.colony,
+          colonyAddress: lastOrder.colonyAddress,
+          unitNumber: lastOrder.unitNumber,
+          gateAccess: lastOrder.gateAccess,
+        })
+        .onConflictDoUpdate({
+          target: conversationsTable.phoneNumber,
+          set: {
+            step: "returning_confirm",
+            name: lastOrder.name,
+            town: lastOrder.town,
+            colony: lastOrder.colony,
+            colonyAddress: lastOrder.colonyAddress,
+            unitNumber: lastOrder.unitNumber,
+            gateAccess: lastOrder.gateAccess,
+            items: null,
+            updatedAt: new Date(),
+          },
+        });
+      const firstName = lastOrder.name.split(" ")[0] ?? lastOrder.name;
+      const gateLine = lastOrder.gateAccess ? `Gate: ${lastOrder.gateAccess}` : "No gate";
+      res.send(twimlResponse(
+        `Welcome back, ${firstName}! 👋\n\n` +
+        `Use your saved address?\n\n` +
+        `${lastOrder.colonyAddress ?? ""}\n` +
+        `${lastOrder.colony}, Unit ${lastOrder.unitNumber}\n` +
+        `${lastOrder.town}\n` +
+        `${gateLine}\n\n` +
+        `Reply YES to use it, or NO to enter a new address.`
+      ));
+      return;
+    }
+
     await db
       .insert(conversationsTable)
       .values({ phoneNumber: from, step: "name" })
@@ -685,6 +734,32 @@ router.post("/webhook/twilio", async (req, res) => {
   }
 
   const step = convo.step;
+
+  if (step === "returning_confirm") {
+    if (text === "yes" || text === "y") {
+      await db.update(conversationsTable)
+        .set({ step: "items", updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Great! What items are you sending in for cleaning?\n\nList them with quantities, for example:\n"2 suits, 3 dress shirts, 1 coat"`
+      ));
+      return;
+    }
+    if (text === "no" || text === "n") {
+      await db.update(conversationsTable)
+        .set({
+          step: "name",
+          name: null, town: null, colony: null, colonyAddress: null,
+          unitNumber: null, gateAccess: null, items: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse("No problem! What is your full name?"));
+      return;
+    }
+    res.send(twimlResponse("Please reply YES to use your saved address or NO to enter a new one."));
+    return;
+  }
 
   if (step === "name") {
     await db.update(conversationsTable)
@@ -716,26 +791,28 @@ router.post("/webhook/twilio", async (req, res) => {
       `Got it! Please reply with the following on separate lines:\n\n` +
       `1. Street address\n` +
       `2. Unit or house number\n` +
-      `3. Gate code (or type "none")\n\n` +
-      `Example:\n458 Riverside Dr\nUnit 50\nnone`
+      `3. Gate code (optional — leave out if no gate)\n\n` +
+      `Example:\n458 Riverside Dr\nUnit 50\n1234#`
     ));
     return;
   }
 
   if (step === "location_details") {
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
-    if (lines.length < 3) {
+    if (lines.length < 2) {
       res.send(twimlResponse(
-        `Please send all three on separate lines:\n\n` +
+        `Please send at least 2 lines:\n\n` +
         `1. Street address\n` +
         `2. Unit or house number\n` +
-        `3. Gate code (or type "none")\n\n` +
-        `Example:\n458 Riverside Dr\nUnit 50\nnone`
+        `3. Gate code (optional — leave out if no gate)\n\n` +
+        `Example:\n458 Riverside Dr\nUnit 50\n1234#`
       ));
       return;
     }
     const [streetAddress, unitNumber, gateRaw] = lines;
-    const gateAccess = gateRaw!.toLowerCase() === "none" || gateRaw!.toLowerCase() === "no" ? null : gateRaw!;
+    const gateAccess = !gateRaw || gateRaw.toLowerCase() === "none" || gateRaw.toLowerCase() === "no"
+      ? null
+      : gateRaw;
     await db.update(conversationsTable)
       .set({
         colonyAddress: streetAddress!,
