@@ -887,7 +887,8 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
   // ── Single-field edits ────────────────────────────────────────────────────
   const editFieldSteps = new Set([
     "admin_edit_name", "admin_edit_phone", "admin_edit_pickup", "admin_edit_notes",
-    "admin_edit_addr_town", "admin_edit_addr_colony", "admin_edit_addr_unit", "admin_edit_addr_gate",
+    "admin_edit_addr_town", "admin_edit_addr_colony", "admin_edit_addr_street",
+    "admin_edit_addr_unit", "admin_edit_addr_gate",
   ]);
   if (step && editFieldSteps.has(step)) {
     // Scratch is either a bare numeric id (single-field flows) or a JSON
@@ -895,7 +896,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     // instead of `id|town|colony|unit` so user-typed values that contain
     // delimiter characters can't corrupt later parsing.
     let id = NaN;
-    let addr: { id: number; town?: string; colony?: string; unit?: string } = { id: NaN };
+    let addr: { id: number; town?: string; colony?: string; street?: string | null; unit?: string } = { id: NaN };
     const sc = session?.items ?? "";
     if (sc.startsWith("{")) {
       try {
@@ -966,8 +967,14 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     }
     if (step === "admin_edit_addr_colony") {
       if (!raw.trim()) return `Colony can't be empty. Try again, or "0" to cancel.`;
-      await setAdminStep(from, "admin_edit_addr_unit",
+      await setAdminStep(from, "admin_edit_addr_street",
         JSON.stringify({ ...addr, colony: raw.trim() }));
+      return `🛣️ Street address? (e.g. "115 Brickman Rd")\n\nText "skip" to leave blank, or "0" to cancel.`;
+    }
+    if (step === "admin_edit_addr_street") {
+      const street = (text === "skip" || text === "clear" || !raw.trim()) ? null : raw.trim();
+      await setAdminStep(from, "admin_edit_addr_unit",
+        JSON.stringify({ ...addr, street }));
       return `🚪 Unit number / apartment?\n\n"0" to cancel.`;
     }
     if (step === "admin_edit_addr_unit") {
@@ -980,16 +987,18 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       const town = addr.town;
       const colony = addr.colony;
       const unit = addr.unit;
+      const street = addr.street ?? null;
       if (!town || !colony || !unit) {
         await setAdminStep(from, "admin_main");
         return `Address edit lost its state — please start over.\n\n${ADMIN_MAIN_MENU}`;
       }
       const gate = (text === "none" || text === "clear" || !raw.trim()) ? null : raw.trim();
       await db.update(ordersTable)
-        .set({ town, colony, unitNumber: unit, gateAccess: gate })
+        .set({ town, colony, colonyAddress: street, unitNumber: unit, gateAccess: gate })
         .where(eq(ordersTable.id, id));
       await setAdminStep(from, "admin_main");
       return `✅ #${id} — address updated:\n  ${town} · ${colony} · Unit ${unit}` +
+             (street ? `\n  Street: ${street}` : "") +
              (gate ? `\n  Gate: ${gate}` : "") +
              `\n\n———\n\n${ADMIN_MAIN_MENU}`;
     }
