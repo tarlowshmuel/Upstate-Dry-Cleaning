@@ -123,6 +123,10 @@ components:
           type: ["string", "null"]
         items:
           type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        cleanerTickets:
+          type: ["string", "null"]
         pickupDate:
           type: ["string", "null"]
           format: date

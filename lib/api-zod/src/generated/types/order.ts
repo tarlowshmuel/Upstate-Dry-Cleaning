@@ -21,6 +21,10 @@ export interface Order {
   /** @nullable */
   items?: string | null;
   /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  cleanerTickets?: string | null;
+  /** @nullable */
   pickupDate?: Date | null;
   status: string;
   paid: boolean;
