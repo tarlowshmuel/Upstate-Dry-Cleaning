@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { ordersTable } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
+import { notifyCustomerStatusChange } from "../lib/customer-notify";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -158,7 +159,7 @@ router.patch("/orders/:id/status", async (req, res) => {
     return;
   }
 
-  const validStatuses = ["pending", "picked_up", "missed", "delivered"];
+  const validStatuses = ["pending", "picked_up", "at_cleaners", "ready", "missed", "delivered"];
   if (!status || !validStatuses.includes(status)) {
     res.status(400).json({ error: `Status must be one of: ${validStatuses.join(", ")}` });
     return;
@@ -174,6 +175,13 @@ router.patch("/orders/:id/status", async (req, res) => {
     res.status(404).json({ error: "Order not found" });
     return;
   }
+
+  // Parity with the SMS admin path — same status transitions trigger the same
+  // customer SMS regardless of which surface flipped them. Fire-and-forget so
+  // a Twilio hiccup doesn't fail the dashboard mutation.
+  notifyCustomerStatusChange(updated, status).catch((err) => {
+    req.log.warn({ err, orderId: updated.id, status }, "Customer notify failed (dashboard path)");
+  });
 
   res.json(updated);
 });

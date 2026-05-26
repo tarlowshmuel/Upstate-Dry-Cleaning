@@ -37,7 +37,7 @@ router.get("/route/today", async (req, res) => {
     const allOrders = !isOperating
       ? []
       : direction === "delivery"
-        ? await db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"))
+        ? await db.select().from(ordersTable).where(eq(ordersTable.status, "ready"))
         : await db.select().from(ordersTable)
             .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
     const orders = allOrders.filter((o) => waveTowns.has(o.town));

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { conversationsTable, ordersTable, referralsTable } from "@workspace/db/schema";
 import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
+import { customerStatusMessage, notifyCustomer, notifyCustomerStatusChange } from "../lib/customer-notify";
 
 const router = Router();
 
@@ -336,7 +337,7 @@ const ADMIN_MAIN_MENU = [
   "",
   'Sort: "sort newest|oldest|pickup|name"',
   'Range: "range today|week|all"',
-  'Filter: "filter status pending|picked_up|delivered|missed|all"',
+  'Filter: "filter status pending|picked_up|at_cleaners|ready|delivered|missed|all"',
   '        "filter paid yes|no|all"',
   'Clear:  "reset"',
   'Credit: "credit <orderId>"  (apply a referral credit)',
@@ -347,7 +348,7 @@ const ADMIN_MAIN_MENU = [
 // In-memory because admin is a single user; resets on restart, which is fine.
 type SortKey = "newest" | "oldest" | "pickup-asc" | "name";
 type RangeKey = "today" | "week" | "all";
-type StatusFilter = "all" | "pending" | "picked_up" | "delivered" | "missed";
+type StatusFilter = "all" | "pending" | "picked_up" | "at_cleaners" | "ready" | "delivered" | "missed";
 type PaidFilter = "all" | "paid" | "unpaid";
 interface AdminPrefs { sort: SortKey; range: RangeKey; status: StatusFilter; paid: PaidFilter }
 const adminPrefs = new Map<string, AdminPrefs>();
@@ -416,21 +417,27 @@ function adminUpdateMenu(order: OrderRow): string {
     `Status: ${order.status} | ${order.paid ? "PAID" : "UNPAID"}`,
     ``,
     `── Status ──`,
-    `1. Mark picked up`,
-    `2. Mark delivered`,
-    `3. Mark missed`,
-    `4. Mark paid`,
-    `5. Mark unpaid`,
+    `1. Mark picked up (from home) 📩`,
+    `2. Mark dropped at cleaners`,
+    `3. Mark ready (back from cleaners)`,
+    `4. Mark delivered 📩`,
+    `5. Mark missed 📩`,
+    `6. Mark paid`,
+    `7. Mark unpaid`,
     ``,
     `── Edit fields ──`,
-    `6. Items`,
-    `7. Name`,
-    `8. Phone`,
-    `9. Address (town · colony · unit/gate)`,
-    `10. Pickup date`,
-    `11. Notes`,
+    `8. Items`,
+    `9. Name`,
+    `10. Phone`,
+    `11. Address (town · colony · unit/gate)`,
+    `12. Pickup date`,
+    `13. Notes`,
+    ``,
+    `── Danger ──`,
+    `14. Remove order (no SMS to customer)`,
     ``,
     `0. Back to menu`,
+    `(📩 = customer notified)`,
   ].join("\n");
 }
 
@@ -456,12 +463,21 @@ async function actionTodayPickups(prefs: AdminPrefs): Promise<string> {
 }
 
 async function actionTodayReturns(prefs: AdminPrefs): Promise<string> {
+  // "At cleaners" view = anything in our hands but not yet delivered: picked up
+  // from home, sitting at the cleaners, or ready to go back. Excludes pending
+  // (still at customer) and delivered/missed.
   const orders = await db
     .select().from(ordersTable)
-    .where(eq(ordersTable.status, "picked_up"));
-  if (orders.length === 0) return "No returns scheduled.";
+    .where(
+      or(
+        eq(ordersTable.status, "picked_up"),
+        eq(ordersTable.status, "at_cleaners"),
+        eq(ordersTable.status, "ready"),
+      )!,
+    );
+  if (orders.length === 0) return "No orders at the cleaners.";
   const sorted = sortOrders(orders, prefs.sort);
-  return `RETURNS (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
+  return `AT CLEANERS (${orders.length}) ${prefsBadge(prefs)}:\n\n` + sorted.map(formatOrder).join("\n\n---\n\n");
 }
 
 async function actionPending(prefs: AdminPrefs): Promise<string> {
@@ -580,7 +596,7 @@ async function fetchRouteOrders(date: string, dir: RouteDir, wave: RouteWave): P
     // Delivery = anything currently at the cleaners, ready to be returned home.
     // We don't filter by pickupDate — once an order is "picked_up", it sits at
     // the cleaners until delivered, regardless of which day it was collected.
-    ? await db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"))
+    ? await db.select().from(ordersTable).where(eq(ordersTable.status, "ready"))
     : await db.select().from(ordersTable)
         .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
   const orders = rows.filter((o) => waveTownSet.has(o.town));
@@ -818,69 +834,44 @@ function formatReferralStatus(stats: ReferralStats): string {
 }
 
 // ─── Customer Notifications ───────────────────────────────────────────────────
-// Returns a short suffix to append to the admin reply, indicating whether the
-// customer was notified. Never throws — SMS failures must not block status changes.
-async function notifyCustomer(order: OrderRow, message: string): Promise<string> {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  if (!sid || !token || !fromNumber) {
-    return `\n(⚠️ Customer NOT notified — TWILIO_PHONE_NUMBER not configured.)`;
-  }
-  try {
-    const client = twilio(sid, token);
-    await client.messages.create({
-      to: order.phoneNumber,
-      from: fromNumber,
-      body: message,
-    });
-    return `\n📩 Customer notified.`;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return `\n⚠️ Customer notify FAILED: ${msg}`;
-  }
-}
-
-function customerStatusMessage(order: OrderRow, newStatus: string): string | null {
-  const greeting = `Hi ${order.name.split(" ")[0] ?? order.name}!`;
-  switch (newStatus) {
-    case "picked_up":
-      return `${greeting} ✅ We just picked up your order ${order.orderNumber} from ${order.colony}. It's on the way to the cleaners — we'll text you again when it's been delivered back to your unit.`;
-    case "delivered":
-      return `${greeting} 🧺 Your dry cleaning order ${order.orderNumber} has been delivered back to ${order.colony}, Unit ${order.unitNumber}. Thanks for choosing Dry Cleaning Service!${order.paid ? "" : " (Reminder: payment still due.)"}`;
-    case "missed":
-      return `${greeting} We weren't able to pick up your order ${order.orderNumber} today. Please text us to reschedule — sorry for the inconvenience!`;
-    default:
-      return null;
-  }
-}
+// Helpers live in ../lib/customer-notify so the dashboard PATCH path can call
+// them too — keeping SMS↔dashboard side effects in lockstep.
+// See: .agents/memory/sms-dashboard-parity.md
 
 async function actionApplyUpdate(id: number, choice: string): Promise<string> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
   if (!order) return `Order #${id} not found.`;
 
-  let newStatus: "picked_up" | "delivered" | "missed" | null = null;
+  let newStatus: "picked_up" | "at_cleaners" | "ready" | "delivered" | "missed" | null = null;
   let paidUpdate: boolean | null = null;
   let baseReply = "";
 
   switch (choice) {
     case "1":
       newStatus = "picked_up";
-      baseReply = `✅ Order #${id} (${order.name}) — marked picked up.`;
+      baseReply = `✅ Order #${id} (${order.name}) — marked picked up from home.`;
       break;
     case "2":
+      newStatus = "at_cleaners";
+      baseReply = `✅ Order #${id} (${order.name}) — marked dropped at cleaners.`;
+      break;
+    case "3":
+      newStatus = "ready";
+      baseReply = `✅ Order #${id} (${order.name}) — marked ready (back from cleaners).`;
+      break;
+    case "4":
       newStatus = "delivered";
       baseReply = `✅ Order #${id} (${order.name}) — marked delivered.`;
       break;
-    case "3":
+    case "5":
       newStatus = "missed";
       baseReply = `✅ Order #${id} (${order.name}) — marked missed.`;
       break;
-    case "4":
+    case "6":
       paidUpdate = true;
       baseReply = `✅ Order #${id} (${order.name}) — marked PAID.`;
       break;
-    case "5":
+    case "7":
       paidUpdate = false;
       baseReply = `✅ Order #${id} (${order.name}) — marked UNPAID.`;
       break;
@@ -891,12 +882,8 @@ async function actionApplyUpdate(id: number, choice: string): Promise<string> {
   if (newStatus) {
     await db.update(ordersTable).set({ status: newStatus }).where(eq(ordersTable.id, id));
     const updatedOrder = { ...order, status: newStatus };
-    const msg = customerStatusMessage(updatedOrder, newStatus);
-    if (msg) {
-      const notifyResult = await notifyCustomer(updatedOrder, msg);
-      return baseReply + notifyResult;
-    }
-    return baseReply;
+    const suffix = await notifyCustomerStatusChange(updatedOrder, newStatus);
+    return baseReply + suffix;
   }
 
   if (paidUpdate !== null) {
@@ -937,7 +924,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     await setAdminStep(from, "admin_main");
     return `✅ Range set to ${rangeMatch[1]}.\n\n${ADMIN_MAIN_MENU}`;
   }
-  const statusFilterMatch = text.match(/^filter\s+status\s+(pending|picked_up|delivered|missed|all)$/);
+  const statusFilterMatch = text.match(/^filter\s+status\s+(pending|picked_up|at_cleaners|ready|delivered|missed|all)$/);
   if (statusFilterMatch) {
     getPrefs(from).status = statusFilterMatch[1] as StatusFilter;
     await setAdminStep(from, "admin_main");
@@ -1069,37 +1056,37 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       await setAdminStep(from, "admin_main");
       return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
     }
-    // Field-edit options 6-11: load order and jump to the right step.
+    // Field-edit options 8-13: load order and jump to the right step.
     const fieldEdit: Record<string, { step: string; prompt: (o: OrderRow) => string }> = {
-      "6": {
+      "8": {
         step: "admin_update_items",
         prompt: (o) =>
           `📦 Items for #${o.id} (${o.name}).\n\nList with quantities, comma-separated.\n` +
           `Text "clear" to remove, or "0" to cancel.` +
           (o.items ? `\n\nCurrent: ${o.items}` : ""),
       },
-      "7": {
+      "9": {
         step: "admin_edit_name",
         prompt: (o) => `📛 New name for #${o.id}?\n\nCurrent: ${o.name}\n\n"0" to cancel.`,
       },
-      "8": {
+      "10": {
         step: "admin_edit_phone",
         prompt: (o) =>
           `📞 New phone for #${o.id}? (e.g. +19293450940)\n\nCurrent: ${o.phoneNumber}\n\n"0" to cancel.`,
       },
-      "9": {
+      "11": {
         step: "admin_edit_addr_town",
         prompt: (o) =>
           `🏘️ New town for #${o.id}?\n\nCurrent: ${o.town}\n\n${adminTownList()}\n\n"0" to cancel.`,
       },
-      "10": {
+      "12": {
         step: "admin_edit_pickup",
         prompt: (o) =>
           `📅 New pickup date for #${o.id}? (YYYY-MM-DD)\n\n` +
           `Current: ${o.pickupDate ?? "—"}\n\n` +
           `Text "clear" to remove date, or "0" to cancel.`,
       },
-      "11": {
+      "13": {
         step: "admin_edit_notes",
         prompt: (o) =>
           `📝 New driver notes for #${o.id}?\n\nCurrent: ${o.notes ?? "—"}\n\n` +
@@ -1116,13 +1103,49 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       await setAdminStep(from, nextStep, String(id));
       return prompt(order);
     }
-    if (!["1", "2", "3", "4", "5"].includes(text)) {
+    // Option 14: remove (hard delete) — gated behind YES confirmation step.
+    if (text === "14") {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      return `Please reply 1-11, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
+      if (!order) {
+        await setAdminStep(from, "admin_main");
+        return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      await setAdminStep(from, "admin_delete_confirm", String(id));
+      return (
+        `⚠️ REMOVE order #${order.id} — ${order.orderNumber} (${order.name})?\n\n` +
+        `This permanently deletes the order. The customer will NOT be notified. ` +
+        `This can't be undone.\n\n` +
+        `Reply "YES" to confirm, or "0" to cancel.`
+      );
+    }
+    if (!["1", "2", "3", "4", "5", "6", "7"].includes(text)) {
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      return `Please reply 1-14, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
     const result = await actionApplyUpdate(id, text);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Delete confirmation ────────────────────────────────────────────────────
+  if (step === "admin_delete_confirm") {
+    const id = parseInt(session?.items ?? "", 10);
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
+    }
+    if (text.toLowerCase() !== "yes") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled — order not removed.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+    if (!order) {
+      await setAdminStep(from, "admin_main");
+      return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    await db.delete(ordersTable).where(eq(ordersTable.id, id));
+    await setAdminStep(from, "admin_main");
+    return `🗑️ Removed order #${order.id} — ${order.orderNumber} (${order.name}). Customer was NOT notified.\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
   // ── Single-field edits ────────────────────────────────────────────────────

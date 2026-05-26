@@ -48,13 +48,17 @@ function todayDateString(): string {
 const STATUSES = [
   { value: "pending", label: "Pending" },
   { value: "picked_up", label: "Picked Up" },
+  { value: "at_cleaners", label: "At Cleaners" },
+  { value: "ready", label: "Ready" },
   { value: "delivered", label: "Delivered" },
   { value: "missed", label: "Missed" },
 ];
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 border-amber-200",
-  picked_up: "bg-blue-100 text-blue-800 border-blue-200",
+  picked_up: "bg-sky-100 text-sky-800 border-sky-200",
+  at_cleaners: "bg-indigo-100 text-indigo-800 border-indigo-200",
+  ready: "bg-violet-100 text-violet-800 border-violet-200",
   delivered: "bg-emerald-100 text-emerald-800 border-emerald-200",
   missed: "bg-red-100 text-red-800 border-red-200",
 };
@@ -62,11 +66,16 @@ const STATUS_STYLES: Record<string, string> = {
 function rowClass(order: { status: string; paid: boolean }): string {
   const complete = order.status === "delivered" && order.paid;
   const missed = order.status === "missed";
+  const ready = order.status === "ready";
   if (complete) {
     return "bg-emerald-50/70 hover:bg-emerald-100/70 border-l-4 border-l-emerald-500";
   }
   if (missed) {
     return "bg-red-50/60 hover:bg-red-100/60 border-l-4 border-l-red-500";
+  }
+  if (ready) {
+    // "Ready" stands out — these are the orders driver should grab on the next delivery wave.
+    return "bg-violet-50/60 hover:bg-violet-100/70 border-l-4 border-l-violet-500";
   }
   // unfinished — soft amber tint
   return "bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-400";
@@ -166,7 +175,9 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState<
     "newest" | "oldest" | "pickup_soonest" | "pickup_latest" | "name"
   >("newest");
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "picked_up" | "delivered" | "missed">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "pending" | "picked_up" | "at_cleaners" | "ready" | "delivered" | "missed"
+  >("all");
   const [paidFilter, setPaidFilter] = useState<"all" | "paid" | "unpaid">("all");
 
   const today = todayDateString();
@@ -219,8 +230,12 @@ export default function Dashboard() {
   const counts = orders
     ? {
         pending: orders.filter((o) => o.status === "pending").length,
-        picked_up: orders.filter((o) => o.status === "picked_up").length,
-        total: orders.length,
+        // "At cleaners" card aggregates the in-our-hands states (picked up
+        // from home, at cleaners, ready) so it stays a useful at-a-glance number.
+        atCleaners: orders.filter(
+          (o) => o.status === "picked_up" || o.status === "at_cleaners" || o.status === "ready",
+        ).length,
+        ready: orders.filter((o) => o.status === "ready").length,
         todaysPickups: todaysPickups.length,
         unpaid: orders.filter((o) => !o.paid).length,
       }
@@ -261,9 +276,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
               { label: "Today's Pickups", value: counts.todaysPickups, color: "text-primary" },
-              { label: "Total Orders", value: counts.total, color: "text-foreground" },
               { label: "Pending", value: counts.pending, color: "text-amber-600" },
-              { label: "At Cleaners", value: counts.picked_up, color: "text-blue-600" },
+              { label: "At Cleaners", value: counts.atCleaners, color: "text-indigo-600" },
+              { label: "Ready", value: counts.ready, color: "text-violet-600" },
               { label: "Unpaid", value: counts.unpaid, color: "text-rose-600" },
             ].map((stat) => (
               <Card key={stat.label} className="border-border/50 shadow-sm">
