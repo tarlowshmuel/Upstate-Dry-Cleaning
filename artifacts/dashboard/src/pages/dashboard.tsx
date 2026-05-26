@@ -3,10 +3,23 @@ import {
   getListOrdersQueryKey,
   useUpdateOrderStatus,
   useUpdateOrderPaid,
+  useBulkMarkOrdersReady,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Table,
@@ -27,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2 } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoutePanel } from "@/components/route-panel";
 import { NewOrderDialog } from "@/components/new-order-dialog";
@@ -177,6 +190,78 @@ function StatusSelect({
   );
 }
 
+// Bulk-mark every at_cleaners order as "ready". The driver hits this when they
+// load everything back into the van after picking up from the cleaners — beats
+// clicking each row's status dropdown one at a time. Delegates to a server-side
+// conditional UPDATE so stale client snapshots can't accidentally rewind orders
+// that have since moved on. Each updated order still triggers the same per-order
+// customer notification (SMS↔dashboard parity preserved).
+function BulkMarkReadyButton({ count }: { count: number }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const { mutate, isPending } = useBulkMarkOrdersReady({
+    mutation: {
+      onSuccess: ({ updated }) => {
+        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["route"] });
+        setOpen(false);
+        if (updated === 0) {
+          toast.info("No orders were at the cleaners to update");
+        } else {
+          toast.success(
+            updated === 1
+              ? "1 order marked ready for delivery"
+              : `${updated} orders marked ready for delivery`,
+          );
+        }
+      },
+      onError: () => {
+        toast.error("Could not update orders — please try again");
+      },
+    },
+  });
+
+  if (count === 0) return null;
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-8 gap-1.5 bg-violet-100 hover:bg-violet-200 text-violet-900 border border-violet-200"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          Mark all {count} ready
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mark all {count} orders ready?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Every order currently <span className="font-semibold">At Cleaners</span>{" "}
+            will be moved to <span className="font-semibold">Ready</span>. Orders
+            already delivered or in any other status will not be touched. Use
+            this after loading everything back into the van.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              mutate();
+            }}
+          >
+            {isPending ? "Updating…" : `Yes, mark ready`}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function Dashboard() {
   const { data: orders, isLoading, isError } = useListOrders({
     query: { queryKey: getListOrdersQueryKey() },
@@ -193,6 +278,7 @@ export default function Dashboard() {
 
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
+  const atCleanersCount = (orders ?? []).filter((o) => o.status === "at_cleaners").length;
 
   const filteredOrders = (orders ?? [])
     .filter((o) => {
@@ -387,6 +473,7 @@ export default function Dashboard() {
                     Reset filters
                   </Button>
                 ) : null}
+                <BulkMarkReadyButton count={atCleanersCount} />
               </div>
             </div>
           </CardHeader>

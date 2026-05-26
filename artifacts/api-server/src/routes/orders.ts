@@ -186,6 +186,31 @@ router.patch("/orders/:id/status", async (req, res) => {
   res.json(updated);
 });
 
+// Bulk transition: every order currently `at_cleaners` → `ready`. Runs as a
+// single conditional UPDATE so stale client snapshots can't rewind orders that
+// have since moved on (delivered, missed, etc). Fires the same per-order
+// customer notification the single-order PATCH does, preserving SMS↔dashboard
+// parity.
+router.post("/orders/bulk-mark-ready", async (req, res) => {
+  const updated = await db
+    .update(ordersTable)
+    .set({ status: "ready" })
+    .where(eq(ordersTable.status, "at_cleaners"))
+    .returning();
+
+  for (const order of updated) {
+    notifyCustomerStatusChange(order, "ready").catch((err) => {
+      req.log.warn(
+        { err, orderId: order.id, status: "ready" },
+        "Customer notify failed (bulk-mark-ready path)",
+      );
+    });
+  }
+
+  req.log.info({ count: updated.length }, "Bulk-marked orders ready");
+  res.json({ updated: updated.length, orders: updated });
+});
+
 router.delete("/orders/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) {

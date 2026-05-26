@@ -93,3 +93,10 @@ export interface OrderPaidUpdate {
   paid: boolean;
 }
 
+export interface BulkMarkReadyResult {
+  /** Count of orders moved from at_cleaners to ready */
+  updated: number;
+  /** The orders that were updated */
+  orders: Order[];
+}
+

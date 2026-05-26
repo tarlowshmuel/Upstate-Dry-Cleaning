@@ -141,6 +141,23 @@ paths:
                 $ref: "#/components/schemas/Order"
         "404":
           description: Order not found
+  /orders/bulk-mark-ready:
+    post:
+      operationId: bulkMarkOrdersReady
+      tags: [orders]
+      summary: Mark every at_cleaners order as ready in one transaction
+      description: |
+        Atomically transitions every order currently in `at_cleaners` to
+        `ready`. Orders not in `at_cleaners` are ignored (no rewind risk).
+        Fires the same customer notification side effect as the per-order
+        PATCH path for each updated order.
+      responses:
+        "200":
+          description: Summary of what changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkMarkReadyResult"
   /orders/{id}/paid:
     patch:
       operationId: updateOrderPaid
@@ -311,3 +328,17 @@ components:
           type: boolean
       required:
         - paid
+    BulkMarkReadyResult:
+      type: object
+      properties:
+        updated:
+          type: integer
+          description: Count of orders moved from at_cleaners to ready
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+          description: The orders that were updated
+      required:
+        - updated
+        - orders
