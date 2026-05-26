@@ -96,7 +96,7 @@ type TownSchedule = {
   phase: 1 | 2;
   wave?: RouteWave;
 };
-const TOWN_SCHEDULE: Record<string, TownSchedule> = {
+export const TOWN_SCHEDULE: Record<string, TownSchedule> = {
   // ── Phase 1 · Monday MORNING wave (bags out by 10 AM) ───────────────────
   "Fallsburg":        { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
   "South Fallsburg":  { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
@@ -120,8 +120,8 @@ const TOWN_SCHEDULE: Record<string, TownSchedule> = {
 };
 
 const TOWNS = Object.keys(TOWN_SCHEDULE);
-const PHASE_1_TOWNS = TOWNS.filter((t) => TOWN_SCHEDULE[t]!.phase === 1);
-function isPhase1(town: string): boolean {
+export const PHASE_1_TOWNS = TOWNS.filter((t) => TOWN_SCHEDULE[t]!.phase === 1);
+export function isPhase1(town: string): boolean {
   return TOWN_SCHEDULE[town]?.phase === 1;
 }
 
@@ -151,7 +151,7 @@ function isPickupWeekday(dow: number): boolean {
   return PICKUP_WEEKDAYS.has(dow);
 }
 
-function waveOf(town: string): RouteWave | null {
+export function waveOf(town: string): RouteWave | null {
   return TOWN_SCHEDULE[town]?.wave ?? null;
 }
 export function townsForWave(wave: RouteWave): string[] {
@@ -195,7 +195,7 @@ function welcomeIntro(): string {
 }
 
 // E.164 normalization (matches existing inline logic for admin new-order phone step).
-function normalizePhone(raw: string): string | null {
+export function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, "");
   if (!digits || digits.length < 10) return null;
   if (raw.trim().startsWith("+")) return `+${digits}`;
@@ -240,7 +240,7 @@ function todayStart(): Date {
   return d;
 }
 
-function toDateOnly(d: Date): string {
+export function toDateOnly(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -289,7 +289,7 @@ export function etTodayDateOnly(now: Date = new Date()): string {
 // the town's wave cutoff, then walk forward picking M–Th days only.
 // Phase 2 towns: returns at most one date (the town's fixed weekday) for
 // backwards compatibility — Phase 2 isn't customer-bookable anyway.
-function nextPickupOptions(town: string, count = 4, now: Date = new Date()): Date[] {
+export function nextPickupOptions(town: string, count = 4, now: Date = new Date()): Date[] {
   const schedule = TOWN_SCHEDULE[town];
   if (!schedule) return [];
   const et = etParts(now);
@@ -325,7 +325,7 @@ function nextPickupOptions(town: string, count = 4, now: Date = new Date()): Dat
   return out;
 }
 
-function nextPickupDate(town: string, now: Date = new Date()): Date | null {
+export function nextPickupDate(town: string, now: Date = new Date()): Date | null {
   const [first] = nextPickupOptions(town, 1, now);
   return first ?? null;
 }
@@ -333,7 +333,7 @@ function nextPickupDate(town: string, now: Date = new Date()): Date | null {
 // Dropoff is pickup + 2 days, but never lands on Fri/Sat/Sun (no Fri delivery,
 // no shabbos work). If +2 lands on Fri/Sat/Sun, push forward to the next M–Th
 // day. In practice: Mon→Wed, Tue→Thu, Wed→next Mon, Thu→next Mon.
-function nextDropoffDate(pickupDate: Date): Date {
+export function nextDropoffDate(pickupDate: Date): Date {
   const d = new Date(pickupDate);
   d.setDate(d.getDate() + 2);
   while (!isPickupWeekday(d.getDay())) {
@@ -344,13 +344,13 @@ function nextDropoffDate(pickupDate: Date): Date {
 
 // True when the +2 dropoff had to be pushed (Wed/Thu pickup → next Monday).
 // Used by the confirmation SMS to add a shabbos heads-up.
-function dropoffPushedPastShabbos(pickupDate: Date): boolean {
+export function dropoffPushedPastShabbos(pickupDate: Date): boolean {
   const naive = new Date(pickupDate);
   naive.setDate(naive.getDate() + 2);
   return !isPickupWeekday(naive.getDay());
 }
 
-function formatLongDate(d: Date): string {
+export function formatLongDate(d: Date): string {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
@@ -2287,7 +2287,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
 
 
 // ─── Confirmation SMS ─────────────────────────────────────────────────────────
-function buildConfirmationSms(order: {
+export function buildConfirmationSms(order: {
   orderNumber: string;
   town: string;
   colony: string;

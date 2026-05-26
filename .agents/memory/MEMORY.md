@@ -12,4 +12,5 @@
 - [Route walk-through stepper](route-walk-stepper.md) — SMS options 6/12 enter a per-stop stepper that re-fetches orders fresh per render; transitions are conditional UPDATEs.
 - [Pickup weekday window](pickup-weekday-window.md) — pickups Mon–Thu only; every write path to orders.pickupDate (Zod schemas, SMS edit step, future reschedule) must reject dow ∉ [1,4].
 - [Admin-forward rate limiting](admin-forward-rate-limit.md) — any customer-triggered SMS to admin needs per-phone cooldown + daily cap or it becomes a free admin-spam vector.
+- [Customer web page parity + abuse](customer-web-page.md) — /order + /my-orders must reuse the SMS schedule helpers, rate-limit unauthed creates, and guard reschedule UPDATEs with conditional SQL.
 - [Admin SMS cancel keyword](admin-sms-cancel-keyword.md) — global "0" intercept eats numeric-0 inputs; numeric-data steps must use "cancel" as abort, not "0".

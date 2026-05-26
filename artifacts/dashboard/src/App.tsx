@@ -10,6 +10,8 @@ import PriceListPage from "@/pages/price-list";
 import SettingsPage from "@/pages/settings";
 import EarningsPage from "@/pages/earnings";
 import ReceiptPage from "@/pages/receipt";
+import OrderPage from "@/pages/order";
+import MyOrdersPage from "@/pages/my-orders";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +31,8 @@ function Router() {
       <Route path="/settings" component={SettingsPage} />
       <Route path="/earnings" component={EarningsPage} />
       <Route path="/receipt/:id" component={ReceiptPage} />
+      <Route path="/order" component={OrderPage} />
+      <Route path="/my-orders" component={MyOrdersPage} />
       <Route component={NotFound} />
     </Switch>
   );

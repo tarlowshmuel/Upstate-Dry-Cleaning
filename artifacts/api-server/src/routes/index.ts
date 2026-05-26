@@ -6,6 +6,7 @@ import routeRouter from "./route";
 import priceListRouter from "./price-list";
 import settingsRouter from "./settings";
 import earningsRouter from "./earnings";
+import customerRouter from "./customer";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(routeRouter);
 router.use(priceListRouter);
 router.use(settingsRouter);
 router.use(earningsRouter);
+router.use(customerRouter);
 
 export default router;
