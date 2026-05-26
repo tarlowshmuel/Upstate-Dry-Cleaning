@@ -1,18 +1,5 @@
-# Fly.io configuration for @workspace/api-server.
-#
-# First-time setup (from your laptop, in the repo root):
-#   1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
-#   2. fly auth login
-#   3. Edit `app = ...` below if "upstate-api" is taken.
-#   4. fly apps create upstate-api          (only if the app doesn't exist yet)
-#   5. fly secrets set ... (see DEPLOY.md step 2 for the full list)
-#   6. fly deploy
-#
-# Re-deploy after code changes:
-#   fly deploy
-
 app = "upstate-api"
-primary_region = "ewr"   # Newark, NJ — closest to NY customers + Neon us-east-1
+primary_region = "ewr"
 
 [build]
   dockerfile = "Dockerfile"
@@ -20,12 +7,9 @@ primary_region = "ewr"   # Newark, NJ — closest to NY customers + Neon us-east
 [http_service]
   internal_port = 8080
   force_https = true
-  # Always-on. Twilio webhooks time out on cold starts, so we never let the
-  # machine sleep. Costs ~$2/mo for a shared-cpu-1x machine.
   auto_start_machines = true
   auto_stop_machines = false
   min_machines_running = 1
-  processes = ["app"]
 
   [[http_service.checks]]
     grace_period = "10s"
