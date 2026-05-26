@@ -105,7 +105,7 @@ export function EditOrderDialog({ order }: { order: Order }) {
     const fields = [
       ["name", false], ["phoneNumber", false], ["town", false],
       ["colony", false], ["unitNumber", false],
-      ["colonyAddress", true], ["gateAccess", true],
+      ["colonyAddress", false], ["gateAccess", true],
       ["items", true], ["notes", true],
     ] as const;
     const diff: Record<string, string | null> = {};
@@ -118,6 +118,15 @@ export function EditOrderDialog({ order }: { order: Order }) {
     const nextPickup = form.pickupDate || null;
     const prevPickup = initial.pickupDate || null;
     if (nextPickup !== prevPickup) diff.pickupDate = nextPickup;
+
+    if (nextPickup) {
+      const [y, m, d] = nextPickup.split("-").map(Number);
+      const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+      if (dow < 1 || dow > 4) {
+        toast.error("Pickups only run Monday–Thursday");
+        return;
+      }
+    }
 
     if (Object.keys(diff).length === 0) {
       toast.info("No changes to save");
@@ -136,7 +145,8 @@ export function EditOrderDialog({ order }: { order: Order }) {
     }
   }
 
-  const required = form.name && form.phoneNumber && form.town && form.colony && form.unitNumber;
+  const required =
+    form.name && form.phoneNumber && form.town && form.colony && form.unitNumber && form.colonyAddress;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -190,7 +200,10 @@ export function EditOrderDialog({ order }: { order: Order }) {
               <Input id="eo-unit" value={form.unitNumber} onChange={(e) => update("unitNumber", e.target.value)} required />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="eo-pickup">Pickup date</Label>
+              <Label htmlFor="eo-pickup">
+                Pickup date
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground">(Mon–Thu only)</span>
+              </Label>
               <Input
                 id="eo-pickup"
                 type="date"
@@ -200,12 +213,13 @@ export function EditOrderDialog({ order }: { order: Order }) {
             </div>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="eo-addr">Colony address (optional)</Label>
+            <Label htmlFor="eo-addr">Colony address *</Label>
             <Input
               id="eo-addr"
               placeholder="e.g. 123 Main St"
               value={form.colonyAddress}
               onChange={(e) => update("colonyAddress", e.target.value)}
+              required
             />
           </div>
           <div className="space-y-1">

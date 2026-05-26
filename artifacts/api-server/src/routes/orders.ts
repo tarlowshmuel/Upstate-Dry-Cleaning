@@ -69,6 +69,11 @@ const createOrderSchema = z.object({
         dt.getUTCDate() === d
       );
     }, "Invalid calendar date")
+    .refine((s) => {
+      const [y, m, d] = s.split("-").map(Number);
+      const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+      return dow >= 1 && dow <= 4;
+    }, "Pickups only run Monday–Thursday")
     .nullable()
     .optional(),
 });
@@ -146,6 +151,11 @@ const updateOrderSchema = z
           dt.getUTCDate() === d
         );
       }, "Invalid calendar date")
+      .refine((s) => {
+        const [y, m, d] = s.split("-").map(Number);
+        const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+        return dow >= 1 && dow <= 4;
+      }, "Pickups only run Monday–Thursday")
       .nullable()
       .optional(),
   })

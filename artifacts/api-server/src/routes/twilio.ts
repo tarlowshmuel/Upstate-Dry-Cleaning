@@ -1635,6 +1635,10 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
         if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m! - 1 || dt.getUTCDate() !== d) {
           return `Not a real calendar date. Try again, or "0" to cancel.`;
         }
+        const dow = dt.getUTCDay();
+        if (dow < 1 || dow > 4) {
+          return `Pickups only run Monday–Thursday. Try again, or "0" to cancel.`;
+        }
       }
       await db.update(ordersTable).set({ pickupDate: value }).where(eq(ordersTable.id, id));
       await setAdminStep(from, "admin_main");

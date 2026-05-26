@@ -76,6 +76,14 @@ export function NewOrderDialog() {
       toast.error("Please pick a town");
       return;
     }
+    if (form.pickupDate) {
+      const [y, m, d] = form.pickupDate.split("-").map(Number);
+      const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+      if (dow < 1 || dow > 4) {
+        toast.error("Pickups only run Monday–Thursday");
+        return;
+      }
+    }
     try {
       await mutateAsync({
         data: {
@@ -187,7 +195,11 @@ export function NewOrderDialog() {
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                     (auto · next {selectedTownSchedule.pickupDay})
                   </span>
-                ) : null}
+                ) : (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    (Mon–Thu only)
+                  </span>
+                )}
               </Label>
               <Input
                 id="no-pickup"
