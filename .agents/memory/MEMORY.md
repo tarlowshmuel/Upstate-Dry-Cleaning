@@ -5,3 +5,4 @@
 - [Wave-split routes](wave-routes.md) — Phase 1 Mondays split into morning (10 AM cutoff) + afternoon (noon cutoff); every "today's pickups" surface must filter by wave too.
 - [Order number sequence](order-number-sequence.md) — `order_number_seq` must be declared as `pgSequence` in Drizzle schema, or push will silently drop it and crash the new-order wizard mid-flow.
 - [Town phase rollout](town-phases.md) — TOWN_SCHEDULE has `phase: 1|2`; customer picker shows Phase 1 numbered + Phase 2 as "coming soon" footer, admin/booking surfaces show Phase 1 only.
+- [Route cache invalidation](route-cache-invalidation.md) — invalidate with prefix ["route"], not ["route","today"]; RoutePanel keys are [route,date,direction,wave].

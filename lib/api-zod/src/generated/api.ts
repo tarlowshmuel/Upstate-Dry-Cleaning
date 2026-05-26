@@ -110,6 +110,14 @@ export const UpdateOrderResponse = zod.object({
 
 
 /**
+ * @summary Permanently delete an order (admin)
+ */
+export const DeleteOrderParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary Update order status
  */
 export const UpdateOrderStatusParams = zod.object({

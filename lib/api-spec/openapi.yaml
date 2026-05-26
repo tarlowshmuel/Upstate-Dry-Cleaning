@@ -100,6 +100,21 @@ paths:
           description: Validation error
         "404":
           description: Order not found
+    delete:
+      operationId: deleteOrder
+      tags: [orders]
+      summary: Permanently delete an order (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Order deleted
+        "404":
+          description: Order not found
   /orders/{id}/status:
     patch:
       operationId: updateOrderStatus

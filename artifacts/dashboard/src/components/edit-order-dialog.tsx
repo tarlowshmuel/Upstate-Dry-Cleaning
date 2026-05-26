@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useUpdateOrder,
+  useDeleteOrder,
   getListOrdersQueryKey,
   type Order,
 } from "@workspace/api-client-react";
@@ -14,10 +15,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type FormState = {
@@ -53,6 +65,22 @@ export function EditOrderDialog({ order }: { order: Order }) {
   const [form, setForm] = useState<FormState>(() => fromOrder(order));
   const qc = useQueryClient();
   const { mutateAsync, isPending } = useUpdateOrder();
+  const { mutateAsync: deleteOrder, isPending: isDeleting } = useDeleteOrder();
+
+  async function handleDelete() {
+    try {
+      await deleteOrder({ id: order.id });
+      await qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      // Prefix-match all route variants — RoutePanel keys are
+      // ["route", date, direction, wave], so "route" prefix invalidates them all.
+      await qc.invalidateQueries({ queryKey: ["route"] });
+      toast.success(`Order #${order.id} removed`);
+      setOpen(false);
+    } catch (err) {
+      toast.error("Failed to remove order");
+      console.error(err);
+    }
+  }
 
   // Re-sync from props whenever the dialog is opened so the user sees the
   // latest server state, not stale data from a previous open.
@@ -99,7 +127,7 @@ export function EditOrderDialog({ order }: { order: Order }) {
     try {
       await mutateAsync({ id: order.id, data: diff });
       await qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-      await qc.invalidateQueries({ queryKey: ["route", "today"] });
+      await qc.invalidateQueries({ queryKey: ["route"] });
       toast.success(`Order #${order.id} updated`);
       setOpen(false);
     } catch (err) {
@@ -204,13 +232,48 @@ export function EditOrderDialog({ order }: { order: Order }) {
               onChange={(e) => update("notes", e.target.value)}
             />
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!required || isPending}>
-              {isPending ? "Saving…" : "Save changes"}
-            </Button>
+          <DialogFooter className="flex-row sm:justify-between gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  disabled={isPending || isDeleting}
+                >
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Remove
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove order #{order.id}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes order <span className="font-mono">{order.orderNumber}</span> for{" "}
+                    <span className="font-semibold">{order.name}</span>. The customer will <strong>not</strong> be
+                    notified. This can&apos;t be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="bg-destructive text-white hover:bg-destructive/90"
+                  >
+                    {isDeleting ? "Removing…" : "Yes, remove"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!required || isPending || isDeleting}>
+                {isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

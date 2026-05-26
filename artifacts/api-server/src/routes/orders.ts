@@ -178,6 +178,24 @@ router.patch("/orders/:id/status", async (req, res) => {
   res.json(updated);
 });
 
+router.delete("/orders/:id", async (req, res) => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid order ID" });
+    return;
+  }
+  const [deleted] = await db
+    .delete(ordersTable)
+    .where(eq(ordersTable.id, id))
+    .returning({ id: ordersTable.id, orderNumber: ordersTable.orderNumber });
+  if (!deleted) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  req.log.info({ orderId: deleted.id, orderNumber: deleted.orderNumber }, "Order deleted");
+  res.status(204).send();
+});
+
 router.patch("/orders/:id/paid", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   const { paid } = req.body as { paid?: boolean };
