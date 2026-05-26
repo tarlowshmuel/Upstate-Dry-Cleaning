@@ -14,3 +14,4 @@
 - [Admin-forward rate limiting](admin-forward-rate-limit.md) — any customer-triggered SMS to admin needs per-phone cooldown + daily cap or it becomes a free admin-spam vector.
 - [Customer web page parity + abuse](customer-web-page.md) — /order + /my-orders must reuse the SMS schedule helpers, rate-limit unauthed creates, and guard reschedule UPDATEs with conditional SQL.
 - [Admin SMS cancel keyword](admin-sms-cancel-keyword.md) — global "0" intercept eats numeric-0 inputs; numeric-data steps must use "cancel" as abort, not "0".
+- [Customer menu picker](customer-menu-picker.md) — web items picker must resolve price list inside the tx AND keep writing orders.items text for SMS admin parity.

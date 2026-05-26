@@ -2,7 +2,8 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod/v4";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { ordersTable } from "@workspace/db/schema";
+import { ordersTable, orderLineItemsTable, priceListTable } from "@workspace/db/schema";
+import { asc } from "drizzle-orm";
 import {
   PHASE_1_TOWNS,
   TOWN_SCHEDULE,
@@ -92,6 +93,21 @@ function lookupRateLimit(req: Request, res: Response, next: NextFunction): void 
   next();
 }
 
+// ─── GET /api/customer/price-list ─────────────────────────────────────────
+// Active items only — the customer picker needs name + cents, nothing else.
+router.get("/customer/price-list", async (_req, res) => {
+  const rows = await db
+    .select({
+      id: priceListTable.id,
+      name: priceListTable.name,
+      priceCents: priceListTable.priceCents,
+    })
+    .from(priceListTable)
+    .where(eq(priceListTable.active, true))
+    .orderBy(asc(priceListTable.sortOrder), asc(priceListTable.id));
+  res.json({ items: rows });
+});
+
 // Public, no-auth endpoints used by the customer-facing /order and /my-orders
 // pages. These mirror the SMS booking + reschedule flow so customers using the
 // web form get exactly the same scheduling rules, shabbos warnings, cutoffs,
@@ -140,7 +156,19 @@ const createCustomerOrderSchema = z.object({
   colonyAddress: z.string().trim().max(200).optional().nullable(),
   unitNumber: z.string().trim().min(1).max(40),
   gateAccess: z.string().trim().max(120).optional().nullable(),
-  items: z.string().trim().max(500).optional().nullable(),
+  // Structured menu selections. Customer page renders the active price list
+  // as a qty stepper; this is the only items channel for the web flow now.
+  // (SMS flow still uses the free-text items field on the orders table.)
+  items: z
+    .array(
+      z.object({
+        priceListId: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(99),
+      }),
+    )
+    .max(40)
+    .optional()
+    .default([]),
   notes: z.string().trim().max(500).optional().nullable(),
   pickupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
 });
@@ -189,32 +217,93 @@ router.post("/customer/orders", async (req, res) => {
   const [y, m, day] = d.pickupDate.split("-").map(Number);
   const pickupDate = new Date(y!, m! - 1, day!);
 
+  const pickedIds = (d.items ?? []).map((i) => i.priceListId);
+
   // Insert with retry on order-number collision (same pattern as admin path).
+  // Price-list resolution happens INSIDE the transaction so a concurrent
+  // admin edit (rename, price change, soft-delete) can't slip in between
+  // the read and the line-item write. Unknown/inactive IDs return 400.
+  let unknownIds: number[] = [];
   for (let attempt = 0; attempt < 6; attempt++) {
     const orderNumber = await nextOrderNumber();
     try {
-      const [created] = await db
-        .insert(ordersTable)
-        .values({
-          orderNumber,
-          name: d.name,
-          phoneNumber: phone,
-          town: d.town,
-          colony: d.colony,
-          colonyAddress: d.colonyAddress ?? null,
-          unitNumber: d.unitNumber,
-          gateAccess: d.gateAccess ?? null,
-          items: d.items ?? null,
-          notes: d.notes ?? null,
-          pickupDate: d.pickupDate,
-          status: "pending",
-          paid: false,
-        })
-        .returning();
-      if (!created) {
+      const txResult = await db.transaction(async (tx) => {
+        const priceRows =
+          pickedIds.length > 0
+            ? await tx
+                .select({
+                  id: priceListTable.id,
+                  name: priceListTable.name,
+                  priceCents: priceListTable.priceCents,
+                })
+                .from(priceListTable)
+                .where(
+                  and(eq(priceListTable.active, true), inArray(priceListTable.id, pickedIds)),
+                )
+            : [];
+        const priceById = new Map(priceRows.map((r) => [r.id, r]));
+        const missing = pickedIds.filter((id) => !priceById.has(id));
+        if (missing.length > 0) {
+          return { kind: "unknown" as const, missing };
+        }
+        const resolvedLines = (d.items ?? []).map((i, idx) => {
+          const p = priceById.get(i.priceListId)!;
+          return {
+            priceListId: p.id,
+            itemName: p.name,
+            quantity: i.quantity,
+            unitPriceCents: p.priceCents,
+            sortOrder: idx * 10,
+          };
+        });
+        const itemsSummary =
+          resolvedLines.length > 0
+            ? resolvedLines.map((l) => `${l.quantity} ${l.itemName}`).join(", ")
+            : null;
+
+        const [row] = await tx
+          .insert(ordersTable)
+          .values({
+            orderNumber,
+            name: d.name,
+            phoneNumber: phone,
+            town: d.town,
+            colony: d.colony,
+            colonyAddress: d.colonyAddress ?? null,
+            unitNumber: d.unitNumber,
+            gateAccess: d.gateAccess ?? null,
+            items: itemsSummary,
+            notes: d.notes ?? null,
+            pickupDate: d.pickupDate,
+            status: "pending",
+            paid: false,
+          })
+          .returning();
+        if (!row) return { kind: "fail" as const };
+        if (resolvedLines.length > 0) {
+          await tx.insert(orderLineItemsTable).values(
+            resolvedLines.map((l) => ({
+              orderId: row.id,
+              priceListId: l.priceListId,
+              itemName: l.itemName,
+              quantity: l.quantity,
+              unitPriceCents: l.unitPriceCents,
+              isOverride: false,
+              sortOrder: l.sortOrder,
+            })),
+          );
+        }
+        return { kind: "ok" as const, row };
+      });
+      if (txResult.kind === "unknown") {
+        unknownIds = txResult.missing;
+        break;
+      }
+      if (txResult.kind === "fail") {
         res.status(500).json({ error: "Failed to create order" });
         return;
       }
+      const created = txResult.row;
 
       // Fire-and-mostly-forget confirmation SMS (don't block the response on
       // Twilio latency, but await so failures show up in logs).
@@ -244,6 +333,13 @@ router.post("/customer/orders", async (req, res) => {
         return;
       }
     }
+  }
+  if (unknownIds.length > 0) {
+    res.status(400).json({
+      error:
+        "Some items you picked are no longer available. Please refresh the page and try again.",
+    });
+    return;
   }
   res.status(500).json({ error: "Could not generate unique order number" });
 });

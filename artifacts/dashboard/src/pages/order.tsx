@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Shirt, CalendarDays, CheckCircle2, Phone, MapPin, AlertCircle, Gift, Mail } from "lucide-react";
+import { Shirt, CalendarDays, CheckCircle2, Phone, MapPin, AlertCircle, Gift, Mail, Plus, Minus } from "lucide-react";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SMS_NUMBER = "(845) 606-0022";
@@ -49,6 +49,8 @@ type ConfirmedOrder = {
   phoneNumber: string;
 };
 
+type MenuItem = { id: number; name: string; priceCents: number };
+
 function emptyForm() {
   return {
     name: "",
@@ -58,14 +60,19 @@ function emptyForm() {
     colonyAddress: "",
     unitNumber: "",
     gateAccess: "",
-    items: "",
     notes: "",
     pickupDate: "",
   };
 }
 
+function formatPrice(cents: number) {
+  return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+}
+
 export default function OrderPage() {
   const [data, setData] = useState<TownsResponse | null>(null);
+  const [menu, setMenu] = useState<MenuItem[] | null>(null);
+  const [qtyById, setQtyById] = useState<Record<number, number>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [submitting, setSubmitting] = useState(false);
@@ -74,6 +81,8 @@ export default function OrderPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // Independent loads — towns is required to book; menu is optional. If the
+    // menu fetch fails we still want the customer to be able to schedule.
     fetch(`${import.meta.env.BASE_URL}api/customer/towns`)
       .then((r) => r.json())
       .then((j: TownsResponse) => {
@@ -82,10 +91,41 @@ export default function OrderPage() {
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
       });
+    fetch(`${import.meta.env.BASE_URL}api/customer/price-list`)
+      .then((r) => r.json())
+      .then((j: { items: MenuItem[] }) => {
+        if (!cancelled) setMenu(j.items ?? []);
+      })
+      .catch(() => {
+        // Menu unavailable — degrade gracefully to "no items menu shown".
+        if (!cancelled) setMenu([]);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const selectedLines = useMemo(
+    () =>
+      (menu ?? [])
+        .map((m) => ({ ...m, qty: qtyById[m.id] ?? 0 }))
+        .filter((l) => l.qty > 0),
+    [menu, qtyById],
+  );
+  const estimatedTotalCents = useMemo(
+    () => selectedLines.reduce((acc, l) => acc + l.qty * l.priceCents, 0),
+    [selectedLines],
+  );
+
+  function bumpQty(id: number, delta: number) {
+    setQtyById((q) => {
+      const next = Math.max(0, Math.min(99, (q[id] ?? 0) + delta));
+      const copy = { ...q };
+      if (next === 0) delete copy[id];
+      else copy[id] = next;
+      return copy;
+    });
+  }
 
   const selectedTown = useMemo(
     () => data?.towns.find((t) => t.name === form.town) ?? null,
@@ -126,7 +166,7 @@ export default function OrderPage() {
           colonyAddress: form.colonyAddress.trim() || null,
           unitNumber: form.unitNumber.trim(),
           gateAccess: form.gateAccess.trim() || null,
-          items: form.items.trim() || null,
+          items: selectedLines.map((l) => ({ priceListId: l.id, quantity: l.qty })),
           notes: form.notes.trim() || null,
           pickupDate: form.pickupDate,
         }),
@@ -146,6 +186,7 @@ export default function OrderPage() {
         unitNumber: j.order.unitNumber,
         phoneNumber: j.order.phoneNumber,
       });
+      setQtyById({});
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -378,13 +419,71 @@ export default function OrderPage() {
               </Field>
             )}
 
-            <Field label="What are we picking up? (optional)" hint='e.g. "2 suits, 3 shirts, 1 coat"'>
-              <Textarea
-                rows={2}
-                value={form.items}
-                onChange={(e) => update("items", e.target.value)}
-                placeholder="2 suits, 3 dress shirts, 1 coat"
-              />
+            <Field
+              label="What are we picking up? (optional)"
+              hint="Add quantities of each item. Final total may include a small pickup fee — we'll text you a receipt before delivery."
+            >
+              {menu === null ? (
+                <p className="text-xs text-muted-foreground">Loading menu…</p>
+              ) : menu.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Menu not set up yet. You can still book — leave a note for the driver below.
+                </p>
+              ) : (
+                <div className="rounded-md border border-border divide-y divide-border/60">
+                  {menu.map((m) => {
+                    const qty = qtyById[m.id] ?? 0;
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{m.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatPrice(m.priceCents)} each
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => bumpQty(m.id, -1)}
+                            disabled={qty === 0}
+                            aria-label={`Decrease ${m.name}`}
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </Button>
+                          <span className="w-6 text-center text-sm tabular-nums">{qty}</span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => bumpQty(m.id, 1)}
+                            aria-label={`Increase ${m.name}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {selectedLines.length > 0 && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/30 text-sm">
+                      <span className="text-muted-foreground">
+                        {selectedLines.reduce((n, l) => n + l.qty, 0)} item
+                        {selectedLines.reduce((n, l) => n + l.qty, 0) === 1 ? "" : "s"} selected
+                      </span>
+                      <span className="font-medium">
+                        Items subtotal: {formatPrice(estimatedTotalCents)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </Field>
 
             <Field label="Notes for the driver (optional)">
