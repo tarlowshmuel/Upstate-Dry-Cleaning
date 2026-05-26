@@ -1,12 +1,13 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, DollarSign, Settings, BarChart3 } from "lucide-react";
+import { LayoutDashboard, DollarSign, Settings, BarChart3, Shirt } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Orders", icon: LayoutDashboard },
   { href: "/earnings", label: "Earnings", icon: BarChart3 },
   { href: "/price-list", label: "Price List", icon: DollarSign },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/order", label: "Customer page", icon: Shirt },
 ];
 
 export function SiteNav() {
