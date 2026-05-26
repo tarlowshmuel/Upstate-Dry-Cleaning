@@ -854,12 +854,17 @@ export default function Dashboard() {
                 { num: "3", label: "Pending orders", desc: "All not-yet-picked-up" },
                 { num: "4", label: "Unpaid orders", desc: "Owe money" },
                 { num: "5", label: "Missed pickups", desc: "Batch-mark missed + auto-notify customers" },
-                { num: "6", label: "Route (any day)", desc: "Pick a day, get optimized stop order" },
+                { num: "6", label: "Pickup route", desc: "Pick a day, get optimized home → cleaners route" },
                 { num: "7", label: "Stats", desc: "Today / week / all-time totals" },
                 { num: "8", label: "Look up an order", desc: "Search by name, phone, or ID" },
                 { num: "9", label: "Update an order", desc: "Mark status, paid, or edit any field" },
                 { num: "10", label: "New order (SMS)", desc: "Create an order over text" },
+                { num: "11", label: "Filtered list", desc: "Apply current sort/range/status/paid filters" },
+                { num: "12", label: "Delivery route", desc: "Pick a day, get optimized cleaners → home route" },
                 { num: "13", label: "Earnings", desc: "Today / week / month / all-time revenue" },
+                { num: "14", label: "Bulk status update", desc: "Drop all at cleaners / mark all ready / delivered" },
+                { num: "15", label: "Settings", desc: "Fee, order minimum, wholesale %" },
+                { num: "16", label: "Price list", desc: "Edit prices, deactivate, or add new items" },
               ].map(({ num, label, desc }) => (
                 <div key={num} className="flex gap-2 items-start">
                   <span className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
@@ -874,8 +879,8 @@ export default function Dashboard() {
             </div>
             <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/40">
               Reply <span className="font-mono text-foreground">0</span> or <span className="font-mono text-foreground">menu</span> at any time to return to the main menu.
-              Inside Update, options <span className="font-mono text-foreground">6–11</span> let you edit items, name, phone, address, pickup date, and notes.
-              Inline anywhere: <span className="font-mono text-foreground">sort newest|oldest|pickup|name</span>, <span className="font-mono text-foreground">range today|week|all</span>.
+              Inside Update, options <span className="font-mono text-foreground">6/7</span> mark paid/unpaid (paid asks Zelle/Cash/skip), <span className="font-mono text-foreground">8–13</span> edit items, name, phone, address, pickup date, notes, and <span className="font-mono text-foreground">14</span> cancels the order.
+              Inline anywhere: <span className="font-mono text-foreground">sort newest|oldest|pickup|name</span>, <span className="font-mono text-foreground">range today|week|all</span>, <span className="font-mono text-foreground">filter status …</span>, <span className="font-mono text-foreground">filter paid yes|no</span>, <span className="font-mono text-foreground">reset</span>.
             </p>
           </CardContent>
         </Card>
