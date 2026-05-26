@@ -171,7 +171,7 @@ export default function Legal() {
                   your pickup day.
                 </span>{" "}
                 Requests received after the cutoff will be scheduled for a later
-                pickup date. We will make reasonable efforts to pick up your
+                pickup date or not processed at all. We will make reasonable efforts to pick up your
                 order on the requested date, but pickup and delivery times are
                 estimates and are not guaranteed. Please leave your bag at the
                 agreed-upon location and provide accurate gate codes when
