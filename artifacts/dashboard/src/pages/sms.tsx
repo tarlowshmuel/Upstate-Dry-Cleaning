@@ -6,6 +6,7 @@ const SERVICE_AREA = "Sullivan County, NY";
 const SHORT_CODE_DISPLAY = "(845) 606-0022";
 const SMS_NUMBER_HREF = "+18456060022";
 const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
+const DEPOT_ADDRESS = "458 Riverside Dr, Fallsburg, NY 12733";
 
 export default function Sms() {
   return (
@@ -36,19 +37,46 @@ export default function Sms() {
           </CardHeader>
           <CardContent className="space-y-5 text-sm leading-relaxed">
             <p className="text-base">
-              To schedule a dry cleaning pickup, send a text message to{" "}
-              <a
-                href={`sms:${SMS_NUMBER_HREF}`}
-                className="font-semibold text-primary underline underline-offset-4"
-              >
-                {SHORT_CODE_DISPLAY}
-              </a>{" "}
-              with the word{" "}
-              <span className="font-mono bg-muted px-1.5 py-0.5 rounded">
-                clean
-              </span>
-              . We will reply with a short series of questions (name, address,
+              <span className="font-semibold">
+                Text{" "}
+                <span className="font-mono bg-muted px-1.5 py-0.5 rounded">
+                  CLEAN
+                </span>{" "}
+                to{" "}
+                <a
+                  href={`sms:${SMS_NUMBER_HREF}`}
+                  className="text-primary underline underline-offset-4"
+                >
+                  {SHORT_CODE_DISPLAY}
+                </a>{" "}
+                to opt in.
+              </span>{" "}
+              We will reply with a short series of questions (name, address,
               gate code if any, and pickup day) to set up your order.
+            </p>
+
+            {/* Compact compliance summary — placed directly under the CTA
+                so Twilio reviewers see every required disclosure in one
+                glance without scrolling. */}
+            <p className="text-sm text-muted-foreground border-l-4 border-primary/40 pl-3 py-1">
+              Msg frequency varies. Msg &amp; data rates may apply. Reply{" "}
+              <span className="font-mono">STOP</span> to opt out,{" "}
+              <span className="font-mono">HELP</span> for help. Consent is
+              not a condition of purchase. See our{" "}
+              <Link
+                href="/privacy"
+                className="text-primary underline underline-offset-4"
+              >
+                Privacy Policy
+              </Link>{" "}
+              and{" "}
+              <Link
+                href="/terms"
+                className="text-primary underline underline-offset-4"
+              >
+                Terms
+              </Link>
+              . By opting in you confirm you are 18+ or have guardian consent.
             </p>
 
             <div className="rounded-md border border-border bg-muted/40 p-4 space-y-2">
@@ -68,10 +96,12 @@ export default function Sms() {
                   to receive SMS order updates from {BUSINESS_NAME}.
                 </li>
               </ol>
-              <p className="text-xs text-muted-foreground pt-1">
+              <p className="text-sm text-muted-foreground pt-1">
                 By texting us, you expressly consent to receive SMS messages from{" "}
                 {BUSINESS_NAME} related to your dry cleaning orders. Consent is{" "}
                 <span className="font-medium">not</span> a condition of purchase.
+                Customers must be 18 years of age or older, or have permission
+                from a parent or guardian.
               </p>
             </div>
 
@@ -116,10 +146,14 @@ export default function Sms() {
               </li>
               <li>
                 <span className="font-semibold">Opt-in keyword:</span>{" "}
-                Text <span className="font-mono">clean</span> (or any pickup
-                request) to{" "}
-                <span className="font-mono">{SHORT_CODE_DISPLAY}</span> to begin
-                service and consent to SMS updates.
+                Text <span className="font-mono">CLEAN</span> to{" "}
+                <a
+                  href={`sms:${SMS_NUMBER_HREF}`}
+                  className="font-mono text-primary underline underline-offset-4"
+                >
+                  {SHORT_CODE_DISPLAY}
+                </a>{" "}
+                to begin service and consent to SMS updates.
               </li>
               <li>
                 <span className="font-semibold">Opt-out keyword:</span> Reply{" "}
@@ -147,7 +181,7 @@ export default function Sms() {
               </li>
             </ul>
 
-            <div className="rounded-md border border-border bg-muted/40 p-4 text-xs space-y-1">
+            <div className="rounded-md border border-border bg-muted/40 p-4 text-sm space-y-1">
               <p className="font-semibold">Privacy:</p>
               <p>
                 {BUSINESS_NAME} does not sell, rent, share, or otherwise
@@ -174,7 +208,23 @@ export default function Sms() {
           </CardContent>
         </Card>
 
-        <footer className="mt-8 text-center text-xs text-muted-foreground space-y-1">
+        <footer className="mt-8 text-center text-sm text-muted-foreground space-y-2">
+          <p className="space-x-3">
+            <a
+              href={`sms:${SMS_NUMBER_HREF}`}
+              className="underline underline-offset-4"
+            >
+              {SHORT_CODE_DISPLAY}
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="underline underline-offset-4"
+            >
+              {CONTACT_EMAIL}
+            </a>
+          </p>
+          <p>{DEPOT_ADDRESS}</p>
           <p>
             <Link href="/privacy" className="underline underline-offset-4">
               Privacy Policy
@@ -184,7 +234,7 @@ export default function Sms() {
               Terms of Service
             </Link>
           </p>
-          <p>
+          <p className="text-xs">
             &copy; {new Date().getFullYear()} {BUSINESS_NAME}. All rights
             reserved.
           </p>
