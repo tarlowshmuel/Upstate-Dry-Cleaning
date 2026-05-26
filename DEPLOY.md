@@ -19,7 +19,12 @@ Total monthly floor: roughly **$3–5/mo** plus your existing Twilio bill.
 
 ## 0. Prerequisites
 
-- A copy of this repo cloned locally with `pnpm` and `node 24` installed.
+- A copy of this repo cloned locally:
+  ```bash
+  git clone https://github.com/tarlowshmuel/Upstate-Dry-Cleaning.git
+  cd Upstate-Dry-Cleaning
+  ```
+- `pnpm` (`npm install -g pnpm`) and Node 24 installed.
 - `pg_dump` / `pg_restore` on your machine (comes with the Postgres client).
 - A credit card on Twilio and Fly (Neon + Cloudflare Pages don't require one for free tiers).
 
