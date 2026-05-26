@@ -1,0 +1,251 @@
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> ls
+Get-Process : A positional parameter cannot be found that accepts argument 'ls'.
+At line:1 char:1
++ PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> ls
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Get-Process], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : PositionalParameterNotFound,Microsoft.PowerShell.Commands.GetProcessCommand
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>     Directory: C:\Users\estee\Documents\Upstate-Dry-Cleaning
+Directory: : The term 'Directory:' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:5
++     Directory: C:\Users\estee\Documents\Upstate-Dry-Cleaning
++     ~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Directory::String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> Mode                 LastWriteTime         Length Name
+Invalid parameter - LastWriteTime
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> ----                 -------------         ------ ----
+>> d-----         5/26/2026  11:29 AM                .agents
+At line:1 char:55
++ ----                 -------------         ------ ----
++                                                       ~
+Missing expression after unary operator '--'.
+At line:2 char:1
++ d-----         5/26/2026  11:29 AM                .agents
++ ~~~~~~
+Unexpected token 'd-----' in expression or statement.
+At line:1 char:3
++ ----                 -------------         ------ ----
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:22
++ ----                 -------------         ------ ----
++                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:24
++ ----                 -------------         ------ ----
++                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:26
++ ----                 -------------         ------ ----
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:28
++ ----                 -------------         ------ ----
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:30
++ ----                 -------------         ------ ----
++                              ~~~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:32
++ ----                 -------------         ------ ----
++                                ~~~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+At line:1 char:34
++ ----                 -------------         ------ ----
++                                  ~~~~~~~~~~~~~~~~~~~~~
+The '--' operator works only on variables or on properties.
+Not all parse errors were reported.  Correct the reported errors and try again.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MissingExpressionAfterOperator
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> d-----         5/26/2026  11:29 AM                artifacts
+d----- : The term 'd-----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ d-----         5/26/2026  11:29 AM                artifacts
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (d-----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> d-----         5/26/2026  11:29 AM                attached_assets
+d----- : The term 'd-----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ d-----         5/26/2026  11:29 AM                attached_assets
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (d-----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> d-----         5/26/2026  11:29 AM                lib
+d----- : The term 'd-----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ d-----         5/26/2026  11:29 AM                lib
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (d-----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> d-----         5/26/2026  11:29 AM                scripts
+d----- : The term 'd-----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ d-----         5/26/2026  11:29 AM                scripts
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (d-----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            186 .dockerignore
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            186 .dockerignore
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM           1996 .env.example
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM           1996 .env.example
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            668 .gitignore
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            668 .gitignore
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM             56 .npmrc
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM             56 .npmrc
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            596 .replit
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            596 .replit
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            201 .replitignore
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            201 .replitignore
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM           6871 DEPLOY.md
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM           6871 DEPLOY.md
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM           2671 Dockerfile
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM           2671 Dockerfile
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            414 fly.toml
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            414 fly.toml
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            585 package.json
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            585 package.json
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM         222778 pnpm-lock.yaml
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM         222778 pnpm-lock.yaml
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM           4555 pnpm-workspace.yaml
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM           4555 pnpm-workspace.yaml
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM           1521 replit.md
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM           1521 replit.md
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            667 tsconfig.base.json
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            667 tsconfig.base.json
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> -a----         5/26/2026  11:29 AM            236 tsconfig.json
+-a---- : The term '-a----' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ -a----         5/26/2026  11:29 AM            236 tsconfig.json
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (-a----:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning> PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>iwr https://fly.io/install.ps1 -useb | iex
+Get-Process : A positional parameter cannot be found that accepts argument 'https://fly.io/install.ps1'.
+At line:1 char:1
++ PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>iwr https://fly.io/i ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Get-Process], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : PositionalParameterNotFound,Microsoft.PowerShell.Commands.GetProcessCommand
+
+PS C:\Users\estee\Documents\Upstate-Dry-Cleaning>
