@@ -62,44 +62,48 @@
 }
 
 :root {
-  --button-outline: rgba(0,0,0, .10);
-  --badge-outline: rgba(0,0,0, .05);
+  --button-outline: rgba(70, 50, 25, .12);
+  --badge-outline: rgba(70, 50, 25, .06);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
+  --elevate-1: rgba(70, 50, 25, .04);
+  --elevate-2: rgba(70, 50, 25, .09);
 
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
-  --border: 214 32% 91%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 214 32% 91%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 214 32% 91%;
-  
-  --primary: 212 100% 48%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 214 32% 91%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  
-  --input: 214.3 31.8% 91.4%;
-  --ring: 212 100% 48%;
-  
-  --sidebar: 0 0% 100%;
-  --sidebar-foreground: 222 47% 11%;
-  --sidebar-border: 214 32% 91%;
-  --sidebar-primary: 212 100% 48%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 210 40% 96.1%;
-  --sidebar-accent-foreground: 222.2 47.4% 11.2%;
-  --sidebar-ring: 212 100% 48%;
+  /* ── Parchment / cream palette ─────────────────────────────────────────────
+     Pulled from the Upstate Dry Cleaning logo background. Body uses a soft
+     parchment; cards a lighter cream so they feel like paper laid on paper.
+     Foreground is a warm sepia-ink rather than cold near-black. */
+  --background: 39 47% 91%;
+  --foreground: 28 32% 18%;
+  --border: 34 28% 78%;
+  --card: 39 60% 96%;
+  --card-foreground: 28 32% 18%;
+  --card-border: 34 28% 80%;
+  --popover: 39 60% 97%;
+  --popover-foreground: 28 32% 18%;
+  --popover-border: 34 28% 80%;
+
+  --primary: 215 50% 28%;
+  --primary-foreground: 39 60% 96%;
+  --secondary: 36 30% 84%;
+  --secondary-foreground: 28 32% 18%;
+  --muted: 38 32% 87%;
+  --muted-foreground: 28 18% 38%;
+  --accent: 38 40% 88%;
+  --accent-foreground: 28 32% 18%;
+  --destructive: 8 70% 46%;
+  --destructive-foreground: 39 60% 96%;
+
+  --input: 34 28% 80%;
+  --ring: 215 50% 28%;
+
+  --sidebar: 39 60% 96%;
+  --sidebar-foreground: 28 32% 18%;
+  --sidebar-border: 34 28% 80%;
+  --sidebar-primary: 215 50% 28%;
+  --sidebar-primary-foreground: 39 60% 96%;
+  --sidebar-accent: 38 40% 88%;
+  --sidebar-accent-foreground: 28 32% 18%;
+  --sidebar-ring: 215 50% 28%;
 
   --app-font-sans: 'Plus Jakarta Sans', sans-serif;
   --app-font-serif: 'Outfit', sans-serif;
@@ -159,5 +163,13 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    /* Parchment "paper" feel: layered warm-tint gradients give the cream
+       background an uneven, hand-aged quality without an actual texture
+       image. Fixed attachment so it doesn't scroll/tile awkwardly. */
+    background-image:
+      radial-gradient(ellipse at 20% 10%, hsl(39 55% 96% / 0.85), transparent 55%),
+      radial-gradient(ellipse at 85% 75%, hsl(32 35% 82% / 0.5), transparent 60%),
+      radial-gradient(ellipse at 50% 50%, hsl(36 40% 88% / 0.35), transparent 70%);
+    background-attachment: fixed;
   }
 }
