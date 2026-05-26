@@ -172,4 +172,23 @@
       radial-gradient(ellipse at 50% 50%, hsl(36 40% 88% / 0.35), transparent 70%);
     background-attachment: fixed;
   }
+  /* Parchment wrinkles + grain: a fixed, full-viewport overlay floated ABOVE
+     all page content so it tints cards & body alike (page wrappers in
+     dashboard/legal paint an opaque bg-background, so anchoring below them
+     would hide the wrinkles). mix-blend-mode: multiply darkens whatever's
+     below in a paper-like way; opacity stays low to keep text legible.
+     Two SVG turbulence tiles: large soft creases + fine paper grain. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.32;
+    mix-blend-mode: multiply;
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='800'><filter id='c'><feTurbulence type='fractalNoise' baseFrequency='0.006 0.018' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 0.30  0 0 0 0 0.22  0 0 0 0 0.14  0 0 0 0.95 0'/></filter><rect width='100%25' height='100%25' filter='url(%23c)'/></svg>"),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='11'/><feColorMatrix values='0 0 0 0 0.30  0 0 0 0 0.22  0 0 0 0 0.14  0 0 0 0.45 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
+    background-size: 1100px 1100px, 240px 240px;
+  }
 }
