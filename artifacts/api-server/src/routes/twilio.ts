@@ -1438,7 +1438,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     if (step === "admin_new_colony") {
       scratch.colony = raw;
       await setAdminStep(from, "admin_new_location", writeScratch(scratch));
-      return `📍 Address details — 3 lines:\n\n1. Street address\n2. Unit / house number\n3. Gate code (or skip)\n\nExample:\n458 Riverside Dr\nUnit 50\n1234#`;
+      return `📍 Address details — 3 lines:\n\n1. Street address\n2. Unit / house number\n3. Gate code (or skip)\n\nExample:\n123 Main St\nUnit 4\n1234#`;
     }
     if (step === "admin_new_location") {
       const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
@@ -2115,7 +2115,7 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
       `1. Street address\n` +
       `2. Unit or house number\n` +
       `3. Gate code (optional — leave out if no gate)\n\n` +
-      `Example:\n458 Riverside Dr\nUnit 50\n1234#`
+      `Example:\n123 Main St\nUnit 4\n1234#`
     ));
     return;
   }
@@ -2128,7 +2128,7 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
         `1. Street address\n` +
         `2. Unit or house number\n` +
         `3. Gate code (optional — leave out if no gate)\n\n` +
-        `Example:\n458 Riverside Dr\nUnit 50\n1234#`
+        `Example:\n123 Main St\nUnit 4\n1234#`
       ));
       return;
     }

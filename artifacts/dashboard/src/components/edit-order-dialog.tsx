@@ -203,7 +203,7 @@ export function EditOrderDialog({ order }: { order: Order }) {
             <Label htmlFor="eo-addr">Colony address (optional)</Label>
             <Input
               id="eo-addr"
-              placeholder="e.g. 458 Riverside Dr"
+              placeholder="e.g. 123 Main St"
               value={form.colonyAddress}
               onChange={(e) => update("colonyAddress", e.target.value)}
             />

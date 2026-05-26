@@ -204,7 +204,7 @@ export function NewOrderDialog() {
             <Label htmlFor="no-addr">Colony address *</Label>
             <Input
               id="no-addr"
-              placeholder="e.g. 458 Riverside Dr"
+              placeholder="e.g. 123 Main St"
               value={form.colonyAddress}
               onChange={(e) => update("colonyAddress", e.target.value)}
               required

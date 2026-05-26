@@ -6,7 +6,6 @@ const SERVICE_AREA = "Sullivan County, NY";
 const SHORT_CODE_DISPLAY = "(845) 606-0022";
 const SMS_NUMBER_HREF = "+18456060022";
 const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
-const DEPOT_ADDRESS = "458 Riverside Dr, Fallsburg, NY 12733";
 
 export default function Sms() {
   return (
@@ -224,7 +223,6 @@ export default function Sms() {
               {CONTACT_EMAIL}
             </a>
           </p>
-          <p>{DEPOT_ADDRESS}</p>
           <p>
             <Link href="/privacy" className="underline underline-offset-4">
               Privacy Policy
