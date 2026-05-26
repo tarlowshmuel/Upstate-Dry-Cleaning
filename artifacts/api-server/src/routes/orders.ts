@@ -194,6 +194,31 @@ router.patch("/orders/:id/status", async (req, res) => {
 // have since moved on (delivered, missed, etc). Fires the same per-order
 // customer notification the single-order PATCH does, preserving SMS↔dashboard
 // parity.
+// One-tap: every order currently in the van (picked_up) is marked at_cleaners.
+// Driver hits this when they walk in and drop the load on the cleaners' counter.
+// Same server-side conditional UPDATE pattern as bulk-mark-ready — see
+// .agents/memory/bulk-status-transitions.md. Per-order customer notification
+// preserved for SMS↔dashboard parity.
+router.post("/orders/bulk-mark-at-cleaners", async (req, res) => {
+  const updated = await db
+    .update(ordersTable)
+    .set({ status: "at_cleaners" })
+    .where(eq(ordersTable.status, "picked_up"))
+    .returning();
+
+  for (const order of updated) {
+    notifyCustomerStatusChange(order, "at_cleaners").catch((err) => {
+      req.log.warn(
+        { err, orderId: order.id, status: "at_cleaners" },
+        "Customer notify failed (bulk-mark-at-cleaners path)",
+      );
+    });
+  }
+
+  req.log.info({ count: updated.length }, "Bulk-marked orders at cleaners");
+  res.json({ updated: updated.length, orders: updated });
+});
+
 router.post("/orders/bulk-mark-ready", async (req, res) => {
   const updated = await db
     .update(ordersTable)

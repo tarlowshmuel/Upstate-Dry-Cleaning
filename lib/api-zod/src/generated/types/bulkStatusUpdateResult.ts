@@ -7,8 +7,8 @@
  */
 import type { Order } from './order';
 
-export interface BulkMarkReadyResult {
-  /** Count of orders moved from at_cleaners to ready */
+export interface BulkStatusUpdateResult {
+  /** Count of orders whose status was changed */
   updated: number;
   /** The orders that were updated */
   orders: Order[];

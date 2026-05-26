@@ -4,6 +4,7 @@ import {
   useUpdateOrderStatus,
   useUpdateOrderPaid,
   useBulkMarkOrdersReady,
+  useBulkMarkOrdersAtCleaners,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -277,6 +278,75 @@ function StatusSelect({
 // conditional UPDATE so stale client snapshots can't accidentally rewind orders
 // that have since moved on. Each updated order still triggers the same per-order
 // customer notification (SMS↔dashboard parity preserved).
+// One-tap: every order currently picked_up (in the van) → at_cleaners. Driver
+// hits this when they walk through the cleaners' door and dump the load.
+// Same server-side conditional UPDATE pattern as BulkMarkReadyButton.
+function BulkMarkAtCleanersButton({ count }: { count: number }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const { mutate, isPending } = useBulkMarkOrdersAtCleaners({
+    mutation: {
+      onSuccess: ({ updated }) => {
+        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["route"] });
+        setOpen(false);
+        if (updated === 0) {
+          toast.info("No picked-up orders to drop off");
+        } else {
+          toast.success(
+            updated === 1
+              ? "1 order marked at cleaners"
+              : `${updated} orders marked at cleaners`,
+          );
+        }
+      },
+      onError: () => {
+        toast.error("Could not update orders — please try again");
+      },
+    },
+  });
+
+  if (count === 0) return null;
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-8 gap-1.5 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-200"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          Drop off all {count} at cleaners
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Drop off all {count} orders at the cleaners?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Every order currently <span className="font-semibold">Picked Up</span>{" "}
+            will be moved to <span className="font-semibold">At Cleaners</span>.
+            Orders in any other status will not be touched. Use this when you
+            walk in and hand the whole load over the counter.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              mutate();
+            }}
+          >
+            {isPending ? "Updating…" : `Drop off ${count}`}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function BulkMarkReadyButton({ count }: { count: number }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -360,6 +430,7 @@ export default function Dashboard() {
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
   const atCleanersCount = (orders ?? []).filter((o) => o.status === "at_cleaners").length;
+  const pickedUpCount = (orders ?? []).filter((o) => o.status === "picked_up").length;
 
   const filteredOrders = (orders ?? [])
     .filter((o) => {
@@ -555,6 +626,7 @@ export default function Dashboard() {
                     Reset filters
                   </Button>
                 ) : null}
+                <BulkMarkAtCleanersButton count={pickedUpCount} />
                 <BulkMarkReadyButton count={atCleanersCount} />
               </div>
             </div>

@@ -141,6 +141,24 @@ paths:
                 $ref: "#/components/schemas/Order"
         "404":
           description: Order not found
+  /orders/bulk-mark-at-cleaners:
+    post:
+      operationId: bulkMarkOrdersAtCleaners
+      tags: [orders]
+      summary: Mark every picked_up order as at_cleaners in one transaction
+      description: |
+        Atomically transitions every order currently in `picked_up` to
+        `at_cleaners`. Orders not in `picked_up` are ignored (no rewind risk).
+        Fires the same customer notification side effect as the per-order
+        PATCH path for each updated order. Hit this when the driver drops the
+        whole load on the cleaners' counter.
+      responses:
+        "200":
+          description: Summary of what changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkStatusUpdateResult"
   /orders/bulk-mark-ready:
     post:
       operationId: bulkMarkOrdersReady
@@ -157,7 +175,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BulkMarkReadyResult"
+                $ref: "#/components/schemas/BulkStatusUpdateResult"
   /orders/{id}/paid:
     patch:
       operationId: updateOrderPaid
@@ -745,12 +763,12 @@ components:
         - wholesalePercent
         - byMethod
         - byRouteDay
-    BulkMarkReadyResult:
+    BulkStatusUpdateResult:
       type: object
       properties:
         updated:
           type: integer
-          description: Count of orders moved from at_cleaners to ready
+          description: Count of orders whose status was changed
         orders:
           type: array
           items:

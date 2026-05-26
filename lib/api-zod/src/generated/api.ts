@@ -173,6 +173,46 @@ export const UpdateOrderStatusResponse = zod.object({
 
 
 /**
+ * Atomically transitions every order currently in `picked_up` to
+`at_cleaners`. Orders not in `picked_up` are ignored (no rewind risk).
+Fires the same customer notification side effect as the per-order
+PATCH path for each updated order. Hit this when the driver drops the
+whole load on the cleaners' counter.
+
+ * @summary Mark every picked_up order as at_cleaners in one transaction
+ */
+export const BulkMarkOrdersAtCleanersResponse = zod.object({
+  "updated": zod.number().describe('Count of orders whose status was changed'),
+  "orders": zod.array(zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "phoneNumber": zod.string(),
+  "name": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "cleanerTickets": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
+  "status": zod.string(),
+  "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})).describe('The orders that were updated')
+})
+
+
+/**
  * Atomically transitions every order currently in `at_cleaners` to
 `ready`. Orders not in `at_cleaners` are ignored (no rewind risk).
 Fires the same customer notification side effect as the per-order
@@ -181,7 +221,7 @@ PATCH path for each updated order.
  * @summary Mark every at_cleaners order as ready in one transaction
  */
 export const BulkMarkOrdersReadyResponse = zod.object({
-  "updated": zod.number().describe('Count of orders moved from at_cleaners to ready'),
+  "updated": zod.number().describe('Count of orders whose status was changed'),
   "orders": zod.array(zod.object({
   "id": zod.number(),
   "orderNumber": zod.string(),

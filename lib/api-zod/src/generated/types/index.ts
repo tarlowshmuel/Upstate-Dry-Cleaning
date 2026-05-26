@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './bulkMarkReadyResult';
+export * from './bulkStatusUpdateResult';
 export * from './createOrderInput';
 export * from './earningsByDay';
 export * from './earningsReport';
