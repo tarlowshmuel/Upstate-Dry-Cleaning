@@ -43,6 +43,21 @@ export interface Order {
   pickupDate?: string | null;
   status: string;
   paid: boolean;
+  /** @nullable */
+  pricedAt?: string | null;
+  /** @nullable */
+  feeCentsSnapshot?: number | null;
+  /** @nullable */
+  totalOverrideCents?: number | null;
+  totalWasOverridden: boolean;
+  /** @nullable */
+  receiptSentAt?: string | null;
+  /** @nullable */
+  paidAt?: string | null;
+  /** @nullable */
+  paidMethod?: string | null;
+  /** @nullable */
+  paidConfirmationSentAt?: string | null;
   createdAt: string;
 }
 
@@ -89,8 +104,127 @@ export interface OrderStatusUpdate {
   status: string;
 }
 
+/**
+ * @nullable
+ */
+export type OrderPaidUpdatePaidMethod = typeof OrderPaidUpdatePaidMethod[keyof typeof OrderPaidUpdatePaidMethod] | null;
+
+
+export const OrderPaidUpdatePaidMethod = {
+  zelle: 'zelle',
+  cash: 'cash',
+} as const;
+
 export interface OrderPaidUpdate {
   paid: boolean;
+  /** @nullable */
+  paidMethod?: OrderPaidUpdatePaidMethod;
+}
+
+export interface PriceListItem {
+  id: number;
+  name: string;
+  priceCents: number;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PriceListInput {
+  name?: string;
+  priceCents?: number;
+  active?: boolean;
+  sortOrder?: number;
+}
+
+export interface Settings {
+  feeCents: number;
+  orderMinimumCents: number;
+  wholesalePercent: number;
+}
+
+export interface SettingsInput {
+  feeCents?: number;
+  orderMinimumCents?: number;
+  wholesalePercent?: number;
+}
+
+export interface OrderLineItem {
+  id: number;
+  orderId: number;
+  /** @nullable */
+  priceListId?: number | null;
+  itemName: string;
+  quantity: number;
+  unitPriceCents: number;
+  isOverride: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface OrderTotals {
+  itemsSubtotalCents: number;
+  feeCents: number;
+  grandTotalCents: number;
+  isOverridden: boolean;
+}
+
+export interface OrderPricing {
+  lines: OrderLineItem[];
+  totals: OrderTotals;
+  isPriced: boolean;
+}
+
+export interface LineItemInput {
+  /** @nullable */
+  priceListId?: number | null;
+  itemName: string;
+  quantity: number;
+  unitPriceCents: number;
+  isOverride?: boolean;
+  sortOrder?: number;
+}
+
+export interface ReplaceLineItemsInput {
+  lines: LineItemInput[];
+  /** @nullable */
+  totalOverrideCents?: number | null;
+  sendReceipt?: boolean;
+}
+
+export interface ReplaceLineItemsResult {
+  order: Order;
+  lines: OrderLineItem[];
+  totals: OrderTotals;
+  receiptSent: boolean;
+  receiptSkippedReason?: string;
+}
+
+export interface EarningsByDay {
+  date: string;
+  count: number;
+  revenueCents: number;
+}
+
+export type EarningsReportByMethod = {
+  zelle: number;
+  cash: number;
+  unknown: number;
+};
+
+export interface EarningsReport {
+  period: string;
+  orderCount: number;
+  grossRevenueCents: number;
+  feesCollectedCents: number;
+  itemsRevenueCents: number;
+  paidCents: number;
+  outstandingCents: number;
+  profitEstimateCents: number;
+  wholesalePercent: number;
+  byMethod: EarningsReportByMethod;
+  byRouteDay: EarningsByDay[];
 }
 
 export interface BulkMarkReadyResult {
@@ -99,4 +233,22 @@ export interface BulkMarkReadyResult {
   /** The orders that were updated */
   orders: Order[];
 }
+
+export type SendOrderReceipt200 = {
+  ok: boolean;
+};
+
+export type GetEarningsParams = {
+period?: GetEarningsPeriod;
+};
+
+export type GetEarningsPeriod = typeof GetEarningsPeriod[keyof typeof GetEarningsPeriod];
+
+
+export const GetEarningsPeriod = {
+  today: 'today',
+  week: 'week',
+  month: 'month',
+  all: 'all',
+} as const;
 

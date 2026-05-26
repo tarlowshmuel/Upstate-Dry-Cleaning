@@ -162,7 +162,7 @@ paths:
     patch:
       operationId: updateOrderPaid
       tags: [orders]
-      summary: Update order paid flag
+      summary: Update order paid flag and optional payment method
       parameters:
         - name: id
           in: path
@@ -184,6 +184,201 @@ paths:
                 $ref: "#/components/schemas/Order"
         "404":
           description: Order not found
+  /orders/{id}/line-items:
+    get:
+      operationId: getOrderLineItems
+      tags: [orders]
+      summary: Get an order's line items + computed totals
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Order pricing snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPricing"
+        "404":
+          description: Order not found
+    put:
+      operationId: replaceOrderLineItems
+      tags: [orders]
+      summary: Replace an order's line items (auto-sends a fresh receipt by default)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceLineItemsInput"
+      responses:
+        "200":
+          description: Updated order + lines + totals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplaceLineItemsResult"
+        "404":
+          description: Order not found
+  /orders/{id}/send-receipt:
+    post:
+      operationId: sendOrderReceipt
+      tags: [orders]
+      summary: Manually re-send the outstanding receipt SMS
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+        "409":
+          description: Cannot send receipt (not priced, or send failed)
+  /price-list:
+    get:
+      operationId: listPriceList
+      tags: [price-list]
+      summary: List price-list items
+      responses:
+        "200":
+          description: All price-list items (active + inactive)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PriceListItem"
+    post:
+      operationId: createPriceListItem
+      tags: [price-list]
+      summary: Add a new price-list item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriceListInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceListItem"
+        "409":
+          description: Duplicate name
+  /price-list/{id}:
+    patch:
+      operationId: updatePriceListItem
+      tags: [price-list]
+      summary: Edit a price-list item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriceListInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceListItem"
+        "404":
+          description: Not found
+    delete:
+      operationId: deactivatePriceListItem
+      tags: [price-list]
+      summary: Soft-delete (deactivate) a price-list item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceListItem"
+        "404":
+          description: Not found
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get pricing/business settings
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update one or more settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+  /earnings:
+    get:
+      operationId: getEarnings
+      tags: [earnings]
+      summary: Earnings report for a period (today/week/month/all)
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [today, week, month, all]
+      responses:
+        "200":
+          description: Earnings report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EarningsReport"
 components:
   schemas:
     HealthStatus:
@@ -245,6 +440,26 @@ components:
           type: string
         paid:
           type: boolean
+        pricedAt:
+          type: ["string", "null"]
+          format: date-time
+        feeCentsSnapshot:
+          type: ["integer", "null"]
+        totalOverrideCents:
+          type: ["integer", "null"]
+        totalWasOverridden:
+          type: boolean
+        receiptSentAt:
+          type: ["string", "null"]
+          format: date-time
+        paidAt:
+          type: ["string", "null"]
+          format: date-time
+        paidMethod:
+          type: ["string", "null"]
+        paidConfirmationSentAt:
+          type: ["string", "null"]
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -258,6 +473,7 @@ components:
         - unitNumber
         - status
         - paid
+        - totalWasOverridden
         - createdAt
     CreateOrderInput:
       type: object
@@ -326,8 +542,209 @@ components:
       properties:
         paid:
           type: boolean
+        paidMethod:
+          type: ["string", "null"]
+          enum: [zelle, cash, null]
       required:
         - paid
+    PriceListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        priceCents:
+          type: integer
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, priceCents, active, sortOrder, createdAt, updatedAt]
+    PriceListInput:
+      type: object
+      properties:
+        name:
+          type: string
+        priceCents:
+          type: integer
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+    Settings:
+      type: object
+      properties:
+        feeCents:
+          type: integer
+        orderMinimumCents:
+          type: integer
+        wholesalePercent:
+          type: integer
+      required: [feeCents, orderMinimumCents, wholesalePercent]
+    SettingsInput:
+      type: object
+      properties:
+        feeCents:
+          type: integer
+        orderMinimumCents:
+          type: integer
+        wholesalePercent:
+          type: integer
+    OrderLineItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderId:
+          type: integer
+        priceListId:
+          type: ["integer", "null"]
+        itemName:
+          type: string
+        quantity:
+          type: integer
+        unitPriceCents:
+          type: integer
+        isOverride:
+          type: boolean
+        sortOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, orderId, itemName, quantity, unitPriceCents, isOverride, sortOrder, createdAt]
+    OrderTotals:
+      type: object
+      properties:
+        itemsSubtotalCents:
+          type: integer
+        feeCents:
+          type: integer
+        grandTotalCents:
+          type: integer
+        isOverridden:
+          type: boolean
+      required: [itemsSubtotalCents, feeCents, grandTotalCents, isOverridden]
+    OrderPricing:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineItem"
+        totals:
+          $ref: "#/components/schemas/OrderTotals"
+        isPriced:
+          type: boolean
+      required: [lines, totals, isPriced]
+    LineItemInput:
+      type: object
+      properties:
+        priceListId:
+          type: ["integer", "null"]
+        itemName:
+          type: string
+        quantity:
+          type: integer
+        unitPriceCents:
+          type: integer
+        isOverride:
+          type: boolean
+        sortOrder:
+          type: integer
+      required: [itemName, quantity, unitPriceCents]
+    ReplaceLineItemsInput:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItemInput"
+        totalOverrideCents:
+          type: ["integer", "null"]
+        sendReceipt:
+          type: boolean
+      required: [lines]
+    ReplaceLineItemsResult:
+      type: object
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineItem"
+        totals:
+          $ref: "#/components/schemas/OrderTotals"
+        receiptSent:
+          type: boolean
+        receiptSkippedReason:
+          type: string
+      required: [order, lines, totals, receiptSent]
+    EarningsByDay:
+      type: object
+      properties:
+        date:
+          type: string
+        count:
+          type: integer
+        revenueCents:
+          type: integer
+      required: [date, count, revenueCents]
+    EarningsReport:
+      type: object
+      properties:
+        period:
+          type: string
+        orderCount:
+          type: integer
+        grossRevenueCents:
+          type: integer
+        feesCollectedCents:
+          type: integer
+        itemsRevenueCents:
+          type: integer
+        paidCents:
+          type: integer
+        outstandingCents:
+          type: integer
+        profitEstimateCents:
+          type: integer
+        wholesalePercent:
+          type: integer
+        byMethod:
+          type: object
+          properties:
+            zelle:
+              type: integer
+            cash:
+              type: integer
+            unknown:
+              type: integer
+          required: [zelle, cash, unknown]
+        byRouteDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/EarningsByDay"
+      required:
+        - period
+        - orderCount
+        - grossRevenueCents
+        - feesCollectedCents
+        - itemsRevenueCents
+        - paidCents
+        - outstandingCents
+        - profitEstimateCents
+        - wholesalePercent
+        - byMethod
+        - byRouteDay
     BulkMarkReadyResult:
       type: object
       properties:

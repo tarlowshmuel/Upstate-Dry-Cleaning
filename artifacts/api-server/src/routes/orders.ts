@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { ordersTable } from "@workspace/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { ordersTable, orderLineItemsTable } from "@workspace/db/schema";
+import { asc, desc, eq } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
 import { notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
+import { sendOutstandingReceipt } from "../lib/receipts";
+import { getFeeCents, computeOrderTotals } from "../lib/pricing";
+import { markOrderPaid } from "../lib/paid-toggle";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -234,40 +237,174 @@ router.delete("/orders/:id", async (req, res) => {
   res.status(204).send();
 });
 
+const paidSchema = z.object({
+  paid: z.boolean(),
+  paidMethod: z.enum(["zelle", "cash"]).nullable().optional(),
+});
+
 router.patch("/orders/:id/paid", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
-  const { paid } = req.body as { paid?: boolean };
-
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid order ID" });
     return;
   }
-
-  if (typeof paid !== "boolean") {
-    res.status(400).json({ error: "Field 'paid' must be a boolean" });
+  const parsed = paidSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const { paid, paidMethod } = parsed.data;
 
-  const [updated] = await db
-    .update(ordersTable)
-    .set({ paid })
-    .where(eq(ordersTable.id, id))
-    .returning();
+  // All side effects live in markOrderPaid (shared with the SMS admin path —
+  // see .agents/memory/sms-dashboard-parity.md). It stamps paidAt on the
+  // false→true transition, dedup-fires the paid confirmation SMS, qualifies
+  // referrals, and clears the dedup guard on un-paying.
+  const result = await markOrderPaid(id, { paid, paidMethod });
+  if (!result) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  req.log.info(
+    { orderId: id, transitioned: result.transitioned, paid, paidMethod },
+    "Order paid updated (dashboard)",
+  );
+  res.json(result.order);
+});
 
-  if (!updated) {
+// ─── Line items / pricing ─────────────────────────────────────────────────────
+// GET returns the stored line items + computed totals snapshot for an order.
+router.get("/orders/:id/line-items", async (req, res) => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid order ID" });
+    return;
+  }
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  const lines = await db
+    .select()
+    .from(orderLineItemsTable)
+    .where(eq(orderLineItemsTable.orderId, id))
+    .orderBy(asc(orderLineItemsTable.sortOrder), asc(orderLineItemsTable.id));
+  const totals = computeOrderTotals(order, lines);
+  res.json({ lines, totals, isPriced: order.pricedAt != null && lines.length > 0 });
+});
+
+const lineItemInput = z.object({
+  priceListId: z.number().int().nullable().optional(),
+  itemName: z.string().trim().min(1).max(60),
+  quantity: z.number().int().min(1).max(999),
+  unitPriceCents: z.number().int().min(0).max(1_000_000),
+  isOverride: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+const putLineItemsSchema = z.object({
+  lines: z.array(lineItemInput),
+  totalOverrideCents: z.number().int().min(0).max(1_000_000).nullable().optional(),
+  sendReceipt: z.boolean().optional(), // default true — caller may suppress
+});
+
+// PUT replaces the entire line-item set in one transaction. Nulls the
+// receipt_sent_at guard so the auto-send fires a fresh receipt (per user spec:
+// any pricing edit re-sends the outstanding receipt). Snapshots the fee at
+// first pricing so later fee bumps don't retroactively change historical totals.
+router.put("/orders/:id/line-items", async (req, res) => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid order ID" });
+    return;
+  }
+  const parsed = putLineItemsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { lines, totalOverrideCents, sendReceipt = true } = parsed.data;
+
+  const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+  if (!existing) {
     res.status(404).json({ error: "Order not found" });
     return;
   }
 
-  // Side effect: when an order is marked paid, qualify any pending referral
-  // whose referredPhone matches this order's customer (same hook as the SMS
-  // admin flow — dashboard/SMS parity).
-  if (paid === true) {
-    const { qualifyReferralsFor } = await import("../lib/referrals");
-    await qualifyReferralsFor(updated.phoneNumber, updated.id);
-  }
+  // Snapshot the fee at first pricing only — later fee bumps don't retroactively
+  // alter historical totals. If admin wants to recalc the fee on an existing
+  // order they can clear it via DB; we don't expose that to the UI.
+  const feeCentsSnapshot = existing.feeCentsSnapshot ?? (await getFeeCents());
 
-  res.json(updated);
+  const updated = await db.transaction(async (tx) => {
+    await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, id));
+    if (lines.length > 0) {
+      await tx.insert(orderLineItemsTable).values(
+        lines.map((l, i) => ({
+          orderId: id,
+          priceListId: l.priceListId ?? null,
+          itemName: l.itemName,
+          quantity: l.quantity,
+          unitPriceCents: l.unitPriceCents,
+          isOverride: l.isOverride ?? false,
+          sortOrder: l.sortOrder ?? i * 10,
+        })),
+      );
+    }
+    const [row] = await tx
+      .update(ordersTable)
+      .set({
+        pricedAt: lines.length > 0 ? existing.pricedAt ?? new Date() : null,
+        feeCentsSnapshot: lines.length > 0 ? feeCentsSnapshot : null,
+        totalOverrideCents: totalOverrideCents ?? null,
+        totalWasOverridden: totalOverrideCents != null,
+        receiptSentAt: null, // re-arm; auto-send will fire below if priced
+      })
+      .where(eq(ordersTable.id, id))
+      .returning();
+    return row;
+  });
+
+  // Fire receipt unless explicitly suppressed (e.g. dashboard "save draft").
+  let receiptResult: { sent: boolean; reason?: string } = { sent: false, reason: "skipped" };
+  if (sendReceipt && updated && updated.pricedAt != null) {
+    receiptResult = await sendOutstandingReceipt(updated.id);
+  }
+  req.log.info(
+    { orderId: id, lineCount: lines.length, receiptSent: receiptResult.sent },
+    "Line items saved",
+  );
+
+  const fresh = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+  const freshLines = await db
+    .select()
+    .from(orderLineItemsTable)
+    .where(eq(orderLineItemsTable.orderId, id))
+    .orderBy(asc(orderLineItemsTable.sortOrder), asc(orderLineItemsTable.id));
+  const totals = computeOrderTotals(fresh[0]!, freshLines);
+  res.json({
+    order: fresh[0],
+    lines: freshLines,
+    totals,
+    receiptSent: receiptResult.sent,
+    receiptSkippedReason: receiptResult.sent ? undefined : receiptResult.reason,
+  });
+});
+
+// Manual re-send of the outstanding receipt. Useful if the auto-send failed
+// (Twilio hiccup) or the customer asks for a fresh copy.
+router.post("/orders/:id/send-receipt", async (req, res) => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid order ID" });
+    return;
+  }
+  const result = await sendOutstandingReceipt(id);
+  if (!result.sent) {
+    res.status(409).json({ error: result.reason ?? "Could not send receipt" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 export default router;

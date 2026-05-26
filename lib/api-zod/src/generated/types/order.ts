@@ -28,5 +28,20 @@ export interface Order {
   pickupDate?: Date | null;
   status: string;
   paid: boolean;
+  /** @nullable */
+  pricedAt?: Date | null;
+  /** @nullable */
+  feeCentsSnapshot?: number | null;
+  /** @nullable */
+  totalOverrideCents?: number | null;
+  totalWasOverridden: boolean;
+  /** @nullable */
+  receiptSentAt?: Date | null;
+  /** @nullable */
+  paidAt?: Date | null;
+  /** @nullable */
+  paidMethod?: string | null;
+  /** @nullable */
+  paidConfirmationSentAt?: Date | null;
   createdAt: Date;
 }

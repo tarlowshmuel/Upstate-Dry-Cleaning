@@ -40,11 +40,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2, Sparkles } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2, Sparkles, Receipt as ReceiptIcon, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoutePanel } from "@/components/route-panel";
 import { NewOrderDialog } from "@/components/new-order-dialog";
 import { EditOrderDialog } from "@/components/edit-order-dialog";
+import { OrderPricingDialog } from "@/components/order-pricing-dialog";
+import { SiteNav } from "@/components/site-nav";
+import { formatCents } from "@/lib/money";
+import type { Order } from "@workspace/api-client-react";
 
 function ItemsList({ text }: { text: string | null | undefined }) {
   if (!text || !text.trim()) return <span className="text-muted-foreground/40 text-sm">—</span>;
@@ -105,7 +109,10 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function PaidToggle({ orderId, paid }: { orderId: number; paid: boolean }) {
+// Paid cell: toggle button + inline method dropdown when paid. Toggling on is
+// one click (no method prompt — matches user spec). Method is editable any
+// time after; the dropdown carries `null` (—) for "method not recorded yet".
+function PaidCell({ order }: { order: Order }) {
   const queryClient = useQueryClient();
   const { mutate, isPending } = useUpdateOrderPaid({
     mutation: {
@@ -116,29 +123,103 @@ function PaidToggle({ orderId, paid }: { orderId: number; paid: boolean }) {
   });
 
   return (
-    <Button
-      size="sm"
-      variant={paid ? "default" : "outline"}
-      disabled={isPending}
-      onClick={() => mutate({ id: orderId, data: { paid: !paid } })}
-      className={
-        paid
-          ? "h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
-          : "h-8 gap-1.5 border-border/60 text-muted-foreground hover:text-foreground"
-      }
-    >
-      {paid ? (
+    <div className="flex flex-col gap-1">
+      <Button
+        size="sm"
+        variant={order.paid ? "default" : "outline"}
+        disabled={isPending}
+        onClick={() => mutate({ id: order.id, data: { paid: !order.paid } })}
+        className={
+          order.paid
+            ? "h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+            : "h-8 gap-1.5 border-border/60 text-muted-foreground hover:text-foreground"
+        }
+      >
+        {order.paid ? (
+          <>
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Paid
+          </>
+        ) : (
+          <>
+            <CircleDashed className="w-3.5 h-3.5" />
+            Unpaid
+          </>
+        )}
+      </Button>
+      {order.paid ? (
+        <Select
+          value={order.paidMethod ?? "__none__"}
+          disabled={isPending}
+          onValueChange={(v) => {
+            const paidMethod = v === "__none__" ? null : (v as "zelle" | "cash");
+            mutate({ id: order.id, data: { paid: true, paidMethod } });
+          }}
+        >
+          <SelectTrigger className="h-7 text-xs px-2">
+            <SelectValue placeholder="Method" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="zelle" className="text-xs">Zelle</SelectItem>
+            <SelectItem value="cash" className="text-xs">Cash</SelectItem>
+            <SelectItem value="__none__" className="text-xs text-muted-foreground">— Unspecified</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : null}
+    </div>
+  );
+}
+
+// Pricing cell: shows total + small actions. Unpriced orders show a prominent
+// "Needs pricing" call-to-action (this is what the driver/admin hits to add
+// line items and auto-send the receipt).
+function PricingCell({ order }: { order: Order }) {
+  const [open, setOpen] = useState(false);
+  const isPriced = order.pricedAt != null;
+  const total =
+    order.totalWasOverridden && order.totalOverrideCents != null
+      ? order.totalOverrideCents
+      : null; // server-side line-item lookup is the source of truth; we show override or "—" here. Most rows will fetch lazily via the dialog.
+
+  return (
+    <div className="flex flex-col gap-1 items-start">
+      {isPriced ? (
         <>
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          Paid
+          <span className="text-sm font-semibold text-foreground">
+            {total != null ? formatCents(total) : "Priced"}
+          </span>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs"
+              onClick={() => setOpen(true)}
+            >
+              <ReceiptIcon className="w-3 h-3 mr-1" /> Edit
+            </Button>
+            <a
+              href={`receipt/${order.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              title="Open printable receipt"
+            >
+              <Printer className="w-3 h-3" />
+            </a>
+          </div>
         </>
       ) : (
-        <>
-          <CircleDashed className="w-3.5 h-3.5" />
-          Unpaid
-        </>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1 text-xs border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100"
+          onClick={() => setOpen(true)}
+        >
+          <DollarSign className="w-3 h-3" /> Add pricing
+        </Button>
       )}
-    </Button>
+      <OrderPricingDialog order={order} open={open} onOpenChange={setOpen} />
+    </div>
   );
 }
 
@@ -341,6 +422,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen w-full bg-background p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-700">
+        <SiteNav />
 
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -516,7 +598,7 @@ export default function Dashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/60">
-                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Paid", "Pickup"].map((h, i) => (
+                      {["ID", "Order", "Customer", "Location", "Items", "Access", "Status", "Total", "Paid", "Pickup"].map((h, i) => (
                         <TableHead key={h} className={`font-medium text-xs uppercase tracking-wider text-muted-foreground py-3 ${i === 0 ? "pl-6" : ""}`}>
                           {h}
                         </TableHead>
@@ -602,9 +684,14 @@ export default function Dashboard() {
                           </div>
                         </TableCell>
 
-                        {/* Paid toggle */}
-                        <TableCell className="py-4 w-[110px]">
-                          <PaidToggle orderId={order.id} paid={order.paid} />
+                        {/* Pricing total + edit/receipt */}
+                        <TableCell className="py-4 w-[130px]">
+                          <PricingCell order={order} />
+                        </TableCell>
+
+                        {/* Paid toggle + method */}
+                        <TableCell className="py-4 w-[130px]">
+                          <PaidCell order={order} />
                         </TableCell>
 
                         {/* Pickup date */}
@@ -653,6 +740,7 @@ export default function Dashboard() {
                 { num: "8", label: "Look up an order", desc: "Search by name, phone, or ID" },
                 { num: "9", label: "Update an order", desc: "Mark status, paid, or edit any field" },
                 { num: "10", label: "New order (SMS)", desc: "Create an order over text" },
+                { num: "13", label: "Earnings", desc: "Today / week / month / all-time revenue" },
               ].map(({ num, label, desc }) => (
                 <div key={num} className="flex gap-2 items-start">
                   <span className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">

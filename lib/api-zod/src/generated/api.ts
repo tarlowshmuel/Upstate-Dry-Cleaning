@@ -47,6 +47,14 @@ export const ListOrdersResponseItem = zod.object({
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem)
@@ -105,6 +113,14 @@ export const UpdateOrderResponse = zod.object({
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -144,6 +160,14 @@ export const UpdateOrderStatusResponse = zod.object({
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -174,20 +198,29 @@ export const BulkMarkOrdersReadyResponse = zod.object({
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })).describe('The orders that were updated')
 })
 
 
 /**
- * @summary Update order paid flag
+ * @summary Update order paid flag and optional payment method
  */
 export const UpdateOrderPaidParams = zod.object({
   "id": zod.coerce.number()
 })
 
 export const UpdateOrderPaidBody = zod.object({
-  "paid": zod.boolean()
+  "paid": zod.boolean(),
+  "paidMethod": zod.union([zod.literal('zelle'),zod.literal('cash'),zod.literal(null)]).nullish()
 })
 
 export const UpdateOrderPaidResponse = zod.object({
@@ -206,7 +239,250 @@ export const UpdateOrderPaidResponse = zod.object({
   "pickupDate": zod.coerce.date().nullish(),
   "status": zod.string(),
   "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get an order's line items + computed totals
+ */
+export const GetOrderLineItemsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetOrderLineItemsResponse = zod.object({
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "orderId": zod.number(),
+  "priceListId": zod.number().nullish(),
+  "itemName": zod.string(),
+  "quantity": zod.number(),
+  "unitPriceCents": zod.number(),
+  "isOverride": zod.boolean(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "totals": zod.object({
+  "itemsSubtotalCents": zod.number(),
+  "feeCents": zod.number(),
+  "grandTotalCents": zod.number(),
+  "isOverridden": zod.boolean()
+}),
+  "isPriced": zod.boolean()
+})
+
+
+/**
+ * @summary Replace an order's line items (auto-sends a fresh receipt by default)
+ */
+export const ReplaceOrderLineItemsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ReplaceOrderLineItemsBody = zod.object({
+  "lines": zod.array(zod.object({
+  "priceListId": zod.number().nullish(),
+  "itemName": zod.string(),
+  "quantity": zod.number(),
+  "unitPriceCents": zod.number(),
+  "isOverride": zod.boolean().optional(),
+  "sortOrder": zod.number().optional()
+})),
+  "totalOverrideCents": zod.number().nullish(),
+  "sendReceipt": zod.boolean().optional()
+})
+
+export const ReplaceOrderLineItemsResponse = zod.object({
+  "order": zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "phoneNumber": zod.string(),
+  "name": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "cleanerTickets": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
+  "status": zod.string(),
+  "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}),
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "orderId": zod.number(),
+  "priceListId": zod.number().nullish(),
+  "itemName": zod.string(),
+  "quantity": zod.number(),
+  "unitPriceCents": zod.number(),
+  "isOverride": zod.boolean(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "totals": zod.object({
+  "itemsSubtotalCents": zod.number(),
+  "feeCents": zod.number(),
+  "grandTotalCents": zod.number(),
+  "isOverridden": zod.boolean()
+}),
+  "receiptSent": zod.boolean(),
+  "receiptSkippedReason": zod.string().optional()
+})
+
+
+/**
+ * @summary Manually re-send the outstanding receipt SMS
+ */
+export const SendOrderReceiptParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SendOrderReceiptResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
+ * @summary List price-list items
+ */
+export const ListPriceListResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "priceCents": zod.number(),
+  "active": zod.boolean(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPriceListResponse = zod.array(ListPriceListResponseItem)
+
+
+/**
+ * @summary Add a new price-list item
+ */
+export const CreatePriceListItemBody = zod.object({
+  "name": zod.string().optional(),
+  "priceCents": zod.number().optional(),
+  "active": zod.boolean().optional(),
+  "sortOrder": zod.number().optional()
+})
+
+
+/**
+ * @summary Edit a price-list item
+ */
+export const UpdatePriceListItemParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdatePriceListItemBody = zod.object({
+  "name": zod.string().optional(),
+  "priceCents": zod.number().optional(),
+  "active": zod.boolean().optional(),
+  "sortOrder": zod.number().optional()
+})
+
+export const UpdatePriceListItemResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "priceCents": zod.number(),
+  "active": zod.boolean(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Soft-delete (deactivate) a price-list item
+ */
+export const DeactivatePriceListItemParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeactivatePriceListItemResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "priceCents": zod.number(),
+  "active": zod.boolean(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get pricing/business settings
+ */
+export const GetSettingsResponse = zod.object({
+  "feeCents": zod.number(),
+  "orderMinimumCents": zod.number(),
+  "wholesalePercent": zod.number()
+})
+
+
+/**
+ * @summary Update one or more settings
+ */
+export const UpdateSettingsBody = zod.object({
+  "feeCents": zod.number().optional(),
+  "orderMinimumCents": zod.number().optional(),
+  "wholesalePercent": zod.number().optional()
+})
+
+export const UpdateSettingsResponse = zod.object({
+  "feeCents": zod.number(),
+  "orderMinimumCents": zod.number(),
+  "wholesalePercent": zod.number()
+})
+
+
+/**
+ * @summary Earnings report for a period (today/week/month/all)
+ */
+export const GetEarningsQueryParams = zod.object({
+  "period": zod.enum(['today', 'week', 'month', 'all']).optional()
+})
+
+export const GetEarningsResponse = zod.object({
+  "period": zod.string(),
+  "orderCount": zod.number(),
+  "grossRevenueCents": zod.number(),
+  "feesCollectedCents": zod.number(),
+  "itemsRevenueCents": zod.number(),
+  "paidCents": zod.number(),
+  "outstandingCents": zod.number(),
+  "profitEstimateCents": zod.number(),
+  "wholesalePercent": zod.number(),
+  "byMethod": zod.object({
+  "zelle": zod.number(),
+  "cash": zod.number(),
+  "unknown": zod.number()
+}),
+  "byRouteDay": zod.array(zod.object({
+  "date": zod.string(),
+  "count": zod.number(),
+  "revenueCents": zod.number()
+}))
 })
 
 

@@ -6,6 +6,10 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Legal from "@/pages/legal";
 import Sms from "@/pages/sms";
+import PriceListPage from "@/pages/price-list";
+import SettingsPage from "@/pages/settings";
+import EarningsPage from "@/pages/earnings";
+import ReceiptPage from "@/pages/receipt";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +25,10 @@ function Router() {
       <Route path="/legal" component={Legal} />
       <Route path="/privacy" component={Legal} />
       <Route path="/terms" component={Legal} />
+      <Route path="/price-list" component={PriceListPage} />
+      <Route path="/settings" component={SettingsPage} />
+      <Route path="/earnings" component={EarningsPage} />
+      <Route path="/receipt/:id" component={ReceiptPage} />
       <Route component={NotFound} />
     </Switch>
   );

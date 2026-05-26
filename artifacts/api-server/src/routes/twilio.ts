@@ -401,6 +401,7 @@ const ADMIN_MAIN_MENU = [
   "10. New order",
   "11. Filtered list (uses current filters)",
   "12. Delivery route (cleaners → homes)",
+  "13. Earnings (today/week/month/all)",
   "",
   'Sort: "sort newest|oldest|pickup|name"',
   'Range: "range today|week|all"',
@@ -954,13 +955,11 @@ async function actionApplyUpdate(id: number, choice: string): Promise<string> {
   }
 
   if (paidUpdate !== null) {
-    await db.update(ordersTable).set({ paid: paidUpdate }).where(eq(ordersTable.id, id));
-    // Paid/unpaid is internal bookkeeping — no customer notification.
-    // Side effect: when an order is marked paid, qualify any pending referral
-    // whose referredPhone matches this order's customer.
-    if (paidUpdate === true) {
-      try { await qualifyReferralsFor(order.phoneNumber, id); } catch { /* best-effort */ }
-    }
+    // Shared with the dashboard PATCH /orders/:id/paid path — single source of
+    // truth for paid side effects (paidAt stamp, paid-confirmation SMS dedup,
+    // referral qualification). See .agents/memory/sms-dashboard-parity.md.
+    const { markOrderPaid } = await import("../lib/paid-toggle");
+    await markOrderPaid(id, { paid: paidUpdate });
     return baseReply;
   }
 
@@ -1545,6 +1544,34 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       const { message, dates } = buildRouteDayMenu("delivery");
       await setAdminStep(from, "admin_delivery_pick_day", dates.join(","));
       return message;
+    }
+    case "13": {
+      // Earnings summary — reuses the same computeEarningsReport the dashboard
+      // hits, so SMS and dashboard never disagree on revenue. Default to "week"
+      // (most actionable view for the operator on the go).
+      const { computeEarningsReport } = await import("./earnings");
+      const r = await computeEarningsReport("week");
+      const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
+      await setAdminStep(from, "admin_main");
+      const byDayLines = r.byRouteDay
+        .slice(0, 5)
+        .map((d) => `  ${d.date === "no-date" ? "(no date)" : d.date}: ${d.count} · ${fmt(d.revenueCents)}`)
+        .join("\n");
+      return [
+        `📊 EARNINGS — This week`,
+        ``,
+        `Orders: ${r.orderCount}`,
+        `Gross: ${fmt(r.grossRevenueCents)}`,
+        `  Items: ${fmt(r.itemsRevenueCents)}`,
+        `  Fees: ${fmt(r.feesCollectedCents)}`,
+        `Paid: ${fmt(r.paidCents)}  ·  Outstanding: ${fmt(r.outstandingCents)}`,
+        `By method: Zelle ${fmt(r.byMethod.zelle)} · Cash ${fmt(r.byMethod.cash)} · Unspec ${fmt(r.byMethod.unknown)}`,
+        `Profit est: ${fmt(r.profitEstimateCents)} (${r.wholesalePercent}% wholesale)`,
+        ``,
+        byDayLines ? `By pickup day (top 5):\n${byDayLines}` : `(No orders yet this week.)`,
+        ``,
+        `0. Back to menu`,
+      ].join("\n");
     }
     default:
       await setAdminStep(from, "admin_main");
