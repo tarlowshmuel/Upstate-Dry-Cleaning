@@ -55,6 +55,8 @@ export const ListOrdersResponseItem = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 })
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem)
@@ -121,6 +123,8 @@ export const UpdateOrderResponse = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -168,6 +172,8 @@ export const UpdateOrderStatusResponse = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -207,6 +213,8 @@ export const BulkMarkOrdersAtCleanersResponse = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 })).describe('The orders that were updated')
 })
@@ -246,6 +254,8 @@ export const BulkMarkOrdersReadyResponse = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 })).describe('The orders that were updated')
 })
@@ -287,6 +297,8 @@ export const UpdateOrderPaidResponse = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -365,6 +377,8 @@ export const ReplaceOrderLineItemsResponse = zod.object({
   "paidAt": zod.coerce.date().nullish(),
   "paidMethod": zod.string().nullish(),
   "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
   "createdAt": zod.coerce.date()
 }),
   "lines": zod.array(zod.object({

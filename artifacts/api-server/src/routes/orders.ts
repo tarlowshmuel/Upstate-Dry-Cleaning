@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { ordersTable, orderLineItemsTable } from "@workspace/db/schema";
-import { asc, desc, eq } from "drizzle-orm";
+import { ordersTable, orderLineItemsTable, priceListTable } from "@workspace/db/schema";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
 import { notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
 import { sendOutstandingReceipt } from "../lib/receipts";
@@ -11,9 +11,39 @@ import { z } from "zod/v4";
 
 const router = Router();
 
+// List orders, enriched with computed per-order totals (itemsSubtotalCents and
+// grandTotalCents) so the dashboard Total column doesn't need an N+1 fetch.
+// Lines are still the source of truth — we aggregate them in SQL each request.
 router.get("/orders", async (_req, res) => {
   const orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt));
-  res.json(orders);
+  if (orders.length === 0) {
+    res.json([]);
+    return;
+  }
+  const subtotals = await db
+    .select({
+      orderId: orderLineItemsTable.orderId,
+      itemsSubtotalCents: sql<number>`coalesce(sum(${orderLineItemsTable.quantity} * ${orderLineItemsTable.unitPriceCents}), 0)::int`,
+    })
+    .from(orderLineItemsTable)
+    .groupBy(orderLineItemsTable.orderId);
+  const subtotalByOrder = new Map(subtotals.map((s) => [s.orderId, s.itemsSubtotalCents]));
+  const enriched = orders.map((o) => {
+    const itemsSubtotalCents = subtotalByOrder.get(o.id) ?? 0;
+    const isOverridden = o.totalWasOverridden && o.totalOverrideCents != null;
+    const grandTotalCents =
+      o.pricedAt == null
+        ? null
+        : isOverridden
+          ? (o.totalOverrideCents as number)
+          : itemsSubtotalCents + (o.feeCentsSnapshot ?? 0);
+    return {
+      ...o,
+      itemsSubtotalCents: o.pricedAt == null ? null : itemsSubtotalCents,
+      grandTotalCents,
+    };
+  });
+  res.json(enriched);
 });
 
 const createOrderSchema = z.object({
@@ -361,19 +391,48 @@ router.put("/orders/:id/line-items", async (req, res) => {
   // order they can clear it via DB; we don't expose that to the UI.
   const feeCentsSnapshot = existing.feeCentsSnapshot ?? (await getFeeCents());
 
+  // Auto-link by exact (case-insensitive) name + matching price so callers can
+  // omit priceListId for staple items (the SMS admin flow and seed scripts
+  // both do this). Mismatched price stays unlinked + isOverride=true so the
+  // UI still surfaces it as a custom price.
+  const activePriceList = await db
+    .select({
+      id: priceListTable.id,
+      name: priceListTable.name,
+      priceCents: priceListTable.priceCents,
+    })
+    .from(priceListTable)
+    .where(eq(priceListTable.active, true));
+  const byNameLower = new Map(activePriceList.map((p) => [p.name.toLowerCase(), p]));
+
   const updated = await db.transaction(async (tx) => {
     await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, id));
     if (lines.length > 0) {
       await tx.insert(orderLineItemsTable).values(
-        lines.map((l, i) => ({
-          orderId: id,
-          priceListId: l.priceListId ?? null,
-          itemName: l.itemName,
-          quantity: l.quantity,
-          unitPriceCents: l.unitPriceCents,
-          isOverride: l.isOverride ?? false,
-          sortOrder: l.sortOrder ?? i * 10,
-        })),
+        lines.map((l, i) => {
+          let priceListId: number | null = l.priceListId ?? null;
+          let isOverride = l.isOverride ?? false;
+          if (priceListId == null) {
+            const match = byNameLower.get(l.itemName.trim().toLowerCase());
+            if (match) {
+              if (match.priceCents === l.unitPriceCents) {
+                priceListId = match.id;
+                isOverride = false;
+              } else {
+                isOverride = true;
+              }
+            }
+          }
+          return {
+            orderId: id,
+            priceListId,
+            itemName: l.itemName,
+            quantity: l.quantity,
+            unitPriceCents: l.unitPriceCents,
+            isOverride,
+            sortOrder: l.sortOrder ?? i * 10,
+          };
+        }),
       );
     }
     const [row] = await tx

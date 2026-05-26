@@ -177,10 +177,9 @@ function PaidCell({ order }: { order: Order }) {
 function PricingCell({ order }: { order: Order }) {
   const [open, setOpen] = useState(false);
   const isPriced = order.pricedAt != null;
-  const total =
-    order.totalWasOverridden && order.totalOverrideCents != null
-      ? order.totalOverrideCents
-      : null; // server-side line-item lookup is the source of truth; we show override or "—" here. Most rows will fetch lazily via the dialog.
+  // grandTotalCents is computed server-side in the list endpoint from the live
+  // line items + fee snapshot (or override). Always present for priced orders.
+  const total = order.grandTotalCents;
 
   return (
     <div className="flex flex-col gap-1 items-start">
@@ -188,6 +187,11 @@ function PricingCell({ order }: { order: Order }) {
         <>
           <span className="text-sm font-semibold text-foreground">
             {total != null ? formatCents(total) : "Priced"}
+            {order.totalWasOverridden ? (
+              <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-600">
+                override
+              </span>
+            ) : null}
           </span>
           <div className="flex gap-1">
             <Button

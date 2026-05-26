@@ -478,6 +478,12 @@ components:
         paidConfirmationSentAt:
           type: ["string", "null"]
           format: date-time
+        itemsSubtotalCents:
+          type: ["integer", "null"]
+          description: Sum of line items (quantity × unit price). Null if not yet priced.
+        grandTotalCents:
+          type: ["integer", "null"]
+          description: itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.
         createdAt:
           type: string
           format: date-time

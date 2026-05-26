@@ -43,5 +43,15 @@ export interface Order {
   paidMethod?: string | null;
   /** @nullable */
   paidConfirmationSentAt?: Date | null;
+  /**
+     * Sum of line items (quantity × unit price). Null if not yet priced.
+     * @nullable
+     */
+  itemsSubtotalCents?: number | null;
+  /**
+     * itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.
+     * @nullable
+     */
+  grandTotalCents?: number | null;
   createdAt: Date;
 }
