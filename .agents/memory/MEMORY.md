@@ -4,7 +4,8 @@
 - [Route direction geometry](route-direction-geometry.md) — pickup = home→cleaners; delivery = cleaners→home; addresses live only in lib/route-service.ts; delivery filter is status=picked_up with no date.
 - [Wave-split routes](wave-routes.md) — Phase 1 Mondays split into morning (10 AM cutoff) + afternoon (noon cutoff); every "today's pickups" surface must filter by wave too.
 - [Order number sequence](order-number-sequence.md) — `order_number_seq` must be declared as `pgSequence` in Drizzle schema, or push will silently drop it and crash the new-order wizard mid-flow.
-- [Town phase rollout](town-phases.md) — TOWN_SCHEDULE has `phase: 1|2`; customer picker shows Phase 1 numbered + Phase 2 as "coming soon" footer, admin/booking surfaces show Phase 1 only.
+- [Town phase rollout](town-phases.md) — TOWN_SCHEDULE has `phase: 1|2`; Phase 1 bookable any Mon–Thu via day picker, Phase 2 hidden from booking surfaces.
+- [Dropoff weekend skip](dropoff-weekend-skip.md) — pickup+2 dropoff must roll past Fri/Sat/Sun; Wed/Thu pickups need shabbos warning on every customer-facing surface.
 - [Route cache invalidation](route-cache-invalidation.md) — invalidate with prefix ["route"], not ["route","today"]; RoutePanel keys are [route,date,direction,wave].
 - [Bulk status transitions](bulk-status-transitions.md) — "mark all X→Y" must be a server-side conditional UPDATE WHERE status='X'; client fanout rewinds orders that moved on between fetch and confirm.
 - [HELP intercept state stash](help-intercept-state-stash.md) — global SMS keywords (HELP/INFO) must stash + restore prior convo state, or mid-booking customers silently lose progress.

@@ -162,7 +162,7 @@ export function NewOrderDialog() {
                     <SelectItem key={t.name} value={t.name}>
                       {t.name}{" "}
                       <span className="text-xs text-muted-foreground">
-                        ({t.pickupDay}s)
+                        ({t.pickupDay})
                       </span>
                     </SelectItem>
                   ))}
@@ -193,11 +193,11 @@ export function NewOrderDialog() {
                 Pickup date
                 {selectedTownSchedule && !pickupTouched && form.pickupDate ? (
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                    (auto · next {selectedTownSchedule.pickupDay})
+                    (auto · soonest Mon–Thu)
                   </span>
                 ) : (
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                    (Mon–Thu only)
+                    (Mon–Thu only · Wed/Thu won't be back before Shabbos)
                   </span>
                 )}
               </Label>

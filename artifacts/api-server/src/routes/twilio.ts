@@ -137,11 +137,19 @@ export const WAVE_ORDER: Record<RouteWave, string[]> = {
 };
 
 // Same-day cutoff per wave. Customer flow uses this to decide whether today
-// still qualifies for pickup (vs. bumping to next Monday).
+// still qualifies for pickup (vs. bumping to the next valid pickup day).
 export const WAVE_CUTOFF_HOUR: Record<RouteWave, number> = {
   morning: 10,    // 10:00 AM
   afternoon: 12,  // 12:00 PM noon
 };
+
+// Phase 1 service runs Mon–Thu only (DOW 1..4). No Fri/Sat/Sun pickup-or-
+// drop-off, so Wed/Thu pickups can't make it back before Shabbos. Customer
+// day-picker surfaces all 4 options with a shabbos warning for Wed/Thu.
+const PICKUP_WEEKDAYS = new Set<number>([1, 2, 3, 4]);
+function isPickupWeekday(dow: number): boolean {
+  return PICKUP_WEEKDAYS.has(dow);
+}
 
 function waveOf(town: string): RouteWave | null {
   return TOWN_SCHEDULE[town]?.wave ?? null;
@@ -178,6 +186,7 @@ const TERMS_URL = `${PUBLIC_URL}/legal`;
 
 function welcomeIntro(): string {
   return [
+    `🗓️ Pickups Mon–Thu — you pick the day. Heads up: Wed/Thu pickups come back the following Monday (no Fri delivery, no shabbos work).`,
     `⏰ Same-day pickup if you order in time: by 10 AM for most towns, by 12 PM noon for Glen Wild, Woodridge & Dairyland. You'll see your exact cutoff when you place your order.`,
     `💵 Payment: Cash or Zelle to ${PAYMENT_PHONE} on delivery.`,
     `🎁 Refer ${REFERRAL_THRESHOLD} neighbors who place a first paid pickup and get a FREE pickup (up to $${REFERRAL_CREDIT_USD}). Text "refer" to add one.`,
@@ -275,37 +284,70 @@ export function etTodayDateOnly(now: Date = new Date()): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function nextPickupDate(town: string, now: Date = new Date()): Date | null {
+// Returns up to `count` upcoming valid pickup dates for a Phase 1 town.
+// Phase 1 customers can choose any M–Th; we filter today out if we're past
+// the town's wave cutoff, then walk forward picking M–Th days only.
+// Phase 2 towns: returns at most one date (the town's fixed weekday) for
+// backwards compatibility — Phase 2 isn't customer-bookable anyway.
+function nextPickupOptions(town: string, count = 4, now: Date = new Date()): Date[] {
   const schedule = TOWN_SCHEDULE[town];
-  if (!schedule) return null;
-  const target = DAY_NUM[schedule.pickup];
-  if (target === undefined) return null;
+  if (!schedule) return [];
   const et = etParts(now);
-  let daysUntil = (target - et.dayOfWeek + 7) % 7;
-  // Same-day cutoff: morning towns must place by 10 AM ET, afternoon by noon ET.
-  // If we're past the cutoff on pickup day, bump to next week.
-  // Phase 2 towns (no wave) fall back to midnight-before behavior.
-  if (daysUntil === 0) {
-    const wave = schedule.wave;
-    if (wave) {
-      if (et.hour >= WAVE_CUTOFF_HOUR[wave]) daysUntil = 7;
-    } else {
-      daysUntil = 7;
-    }
+  const isP1 = schedule.phase === 1;
+  // Phase 2 fallback: single fixed-weekday computation (preserves old behavior).
+  if (!isP1) {
+    const target = DAY_NUM[schedule.pickup];
+    if (target === undefined) return [];
+    let daysUntil = (target - et.dayOfWeek + 7) % 7;
+    if (daysUntil === 0) daysUntil = 7; // midnight-before cutoff
+    const d = new Date(et.year, et.month - 1, et.day);
+    d.setDate(d.getDate() + daysUntil);
+    return [d];
   }
-  // Build pickup date from the ET calendar day so we don't drift across the
-  // UTC date boundary at night. DB column is date-only, so storing as
-  // server-local midnight of the right day is fine for downstream matching.
-  const d = new Date(et.year, et.month - 1, et.day);
-  d.setDate(d.getDate() + daysUntil);
+  // Phase 1: today is eligible only if it's M–Th AND we're before this town's
+  // wave cutoff. Otherwise start from tomorrow.
+  const wave = schedule.wave;
+  const todayEligible =
+    isPickupWeekday(et.dayOfWeek) &&
+    (wave ? et.hour < WAVE_CUTOFF_HOUR[wave] : false);
+  const start = new Date(et.year, et.month - 1, et.day);
+  if (!todayEligible) start.setDate(start.getDate() + 1);
+
+  const out: Date[] = [];
+  const cursor = new Date(start);
+  // Hard ceiling — at worst we scan 14 days to collect 4 M–Th options.
+  for (let i = 0; i < 14 && out.length < count; i++) {
+    if (isPickupWeekday(cursor.getDay())) {
+      out.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+function nextPickupDate(town: string, now: Date = new Date()): Date | null {
+  const [first] = nextPickupOptions(town, 1, now);
+  return first ?? null;
+}
+
+// Dropoff is pickup + 2 days, but never lands on Fri/Sat/Sun (no Fri delivery,
+// no shabbos work). If +2 lands on Fri/Sat/Sun, push forward to the next M–Th
+// day. In practice: Mon→Wed, Tue→Thu, Wed→next Mon, Thu→next Mon.
+function nextDropoffDate(pickupDate: Date): Date {
+  const d = new Date(pickupDate);
+  d.setDate(d.getDate() + 2);
+  while (!isPickupWeekday(d.getDay())) {
+    d.setDate(d.getDate() + 1);
+  }
   return d;
 }
 
-function nextDropoffDate(pickupDate: Date): Date {
-  // Both schedules are pickup + 2 days
-  const d = new Date(pickupDate);
-  d.setDate(d.getDate() + 2);
-  return d;
+// True when the +2 dropoff had to be pushed (Wed/Thu pickup → next Monday).
+// Used by the confirmation SMS to add a shabbos heads-up.
+function dropoffPushedPastShabbos(pickupDate: Date): boolean {
+  const naive = new Date(pickupDate);
+  naive.setDate(naive.getDate() + 2);
+  return !isPickupWeekday(naive.getDay());
 }
 
 function formatLongDate(d: Date): string {
@@ -337,12 +379,14 @@ router.get("/towns", (_req, res) => {
   const now = new Date();
   res.json(
     PHASE_1_TOWNS.map((name) => {
-      const sched = TOWN_SCHEDULE[name]!;
       const next = nextPickupDate(name, now);
+      // Phase 1 towns are now serviceable Mon–Thu (customer picks the day in
+      // SMS; admin sees the soonest pre-filled but can change it). The Town
+      // schema still has fixed-day fields, so we render a friendly summary.
       return {
         name,
-        pickupDay: sched.pickup,
-        dropoffDay: sched.dropoff,
+        pickupDay: "Mon–Thu",
+        dropoffDay: "2 days later (Wed/Thu pickups → next Mon)",
         nextPickupDate: next ? toDateOnly(next) : null,
       };
     }),
@@ -1026,6 +1070,8 @@ interface NewOrderScratch {
   unit?: string;
   gate?: string | null;
   items?: string;
+  pickupDate?: string; // YYYY-MM-DD chosen at admin_new_pickup_day step
+  pickupOptions?: string[]; // YYYY-MM-DD list offered, validated on reply
 }
 function readScratch(s: string | null): NewOrderScratch {
   if (!s) return {};
@@ -2043,6 +2089,60 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       scratch.address = street!;
       scratch.unit = unit!;
       scratch.gate = !gate || /^(none|no|skip)$/i.test(gate) ? null : gate;
+      // Offer up to 4 upcoming Mon–Thu options for this town.
+      const opts = nextPickupOptions(scratch.town!, 4);
+      if (opts.length === 0) {
+        await setAdminStep(from, "admin_main");
+        return `❌ No pickup days available for ${scratch.town}.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      scratch.pickupOptions = opts.map(toDateOnly);
+      await setAdminStep(from, "admin_new_pickup_day", writeScratch(scratch));
+      const lineList = opts.map((d, i) => {
+        const shabbos = dropoffPushedPastShabbos(d) ? " ⚠️ back next Mon" : "";
+        return `${i + 1}. ${formatLongDate(d)}${shabbos}`;
+      }).join("\n");
+      return `📅 Which pickup day?\n\n${lineList}\n\nReply 1-${opts.length}, or "0" to cancel.`;
+    }
+    if (step === "admin_new_pickup_day") {
+      // If the option stash is missing/stale (e.g. process restart between
+      // steps), regenerate from current time instead of dead-ending on "1-0".
+      let opts = scratch.pickupOptions ?? [];
+      if (opts.length === 0 && scratch.town) {
+        const fresh = nextPickupOptions(scratch.town, 4);
+        if (fresh.length > 0) {
+          opts = fresh.map(toDateOnly);
+          scratch.pickupOptions = opts;
+          await setAdminStep(from, "admin_new_pickup_day", writeScratch(scratch));
+          const lineList = fresh.map((d, i) => {
+            const shabbos = dropoffPushedPastShabbos(d) ? " ⚠️ back next Mon" : "";
+            return `${i + 1}. ${formatLongDate(d)}${shabbos}`;
+          }).join("\n");
+          return `📅 Pick a pickup day:\n\n${lineList}\n\nReply 1-${fresh.length}, or "0" to cancel.`;
+        }
+      }
+      const pick = parseInt(text, 10);
+      if (isNaN(pick) || pick < 1 || pick > opts.length) {
+        return `Reply 1-${opts.length}, or "0" to cancel.`;
+      }
+      // Revalidate the chosen date against current cutoff state before
+      // committing — guards against picking "today" before cutoff then
+      // replying after cutoff has passed.
+      const chosen = opts[pick - 1]!;
+      const stillValid = scratch.town
+        ? nextPickupOptions(scratch.town, 8).map(toDateOnly).includes(chosen)
+        : true;
+      if (!stillValid) {
+        const fresh = nextPickupOptions(scratch.town!, 4);
+        scratch.pickupOptions = fresh.map(toDateOnly);
+        await setAdminStep(from, "admin_new_pickup_day", writeScratch(scratch));
+        const lineList = fresh.map((d, i) => {
+          const shabbos = dropoffPushedPastShabbos(d) ? " ⚠️ back next Mon" : "";
+          return `${i + 1}. ${formatLongDate(d)}${shabbos}`;
+        }).join("\n");
+        return `⏰ That day's cutoff just passed. New options:\n\n${lineList}\n\nReply 1-${fresh.length}, or "0" to cancel.`;
+      }
+      scratch.pickupDate = chosen;
+      scratch.pickupOptions = undefined;
       await setAdminStep(from, "admin_new_items", writeScratch(scratch));
       return `📦 Items? (e.g. "2 suits, 3 shirts" — or "skip")`;
     }
@@ -2053,11 +2153,32 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     }
     if (step === "admin_new_notes") {
       const notes = /^(skip|none|no)$/i.test(text) ? null : raw;
-      const pickup = nextPickupDate(scratch.town!);
-      if (!pickup) {
+      // Use the date the admin picked at admin_new_pickup_day; fall back to
+      // soonest available for backwards-compat with any in-flight stale state.
+      let pickupStr = scratch.pickupDate ?? (() => {
+        const d = nextPickupDate(scratch.town!);
+        return d ? toDateOnly(d) : null;
+      })();
+      if (!pickupStr) {
         await setAdminStep(from, "admin_main");
-        return `❌ No service schedule for ${scratch.town}.\n\n${ADMIN_MAIN_MENU}`;
+        return `❌ No pickup days available for ${scratch.town}.\n\n${ADMIN_MAIN_MENU}`;
       }
+      // Final-commit cutoff revalidation. If the admin chose "today" before
+      // the wave cutoff but the reply landed after it, snap the order to the
+      // next valid day and tell them what happened.
+      const validNow = nextPickupOptions(scratch.town!, 8).map(toDateOnly);
+      let cutoffBumped = false;
+      if (!validNow.includes(pickupStr)) {
+        const [first] = validNow;
+        if (!first) {
+          await setAdminStep(from, "admin_main");
+          return `❌ No pickup days available for ${scratch.town}.\n\n${ADMIN_MAIN_MENU}`;
+        }
+        pickupStr = first;
+        cutoffBumped = true;
+      }
+      const [py, pm, pd] = pickupStr.split("-").map(Number);
+      const pickup = new Date(py!, pm! - 1, pd!);
       const orderNumber = await nextOrderNumber();
       await db.insert(ordersTable).values({
         orderNumber,
@@ -2070,14 +2191,14 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
         gateAccess: scratch.gate ?? null,
         items: scratch.items ?? null,
         notes,
-        pickupDate: toDateOnly(pickup),
+        pickupDate: pickupStr,
         status: "pending",
       });
       await setAdminStep(from, "admin_main");
       return [
         `✅ Order ${orderNumber} created for ${scratch.name}.`,
         `📍 ${scratch.colony}, Unit ${scratch.unit} · ${scratch.town}`,
-        `📅 Pickup: ${formatLongDate(pickup)}`,
+        `📅 Pickup: ${formatLongDate(pickup)}${cutoffBumped ? " (auto-bumped — cutoff passed)" : ""}`,
         `📞 ${scratch.phone}`,
         ``,
         `———`,
@@ -2180,11 +2301,15 @@ function buildConfirmationSms(order: {
   const notesBlock = order.notes ? [``, `📝 Notes: ${order.notes}`] : [];
   const wave = waveOf(order.town);
   const cutoffLine = wave
-    ? `⏰ Same-day cutoff: ${waveCutoffLabel(wave)} on your pickup day. After that, your order moves to next week.`
+    ? `⏰ Same-day cutoff: ${waveCutoffLabel(wave)} on your pickup day. After that, your order moves to the next available day.`
     : `⏰ Order cutoff: 12:00 AM the night before your pickup day.`;
   const bagsOutLine = wave
     ? `📋 Please have your items bagged and ready by ${wave === "morning" ? "10:00 AM" : "12:00 PM noon"} on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`
     : `📋 Please have your items bagged and ready by 10:00 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`;
+  // Add a shabbos heads-up when the dropoff had to be pushed past Fri/Sat/Sun.
+  const shabbosLine = dropoffPushedPastShabbos(order.pickupDate)
+    ? `🕯️ Heads up: this order won't be back before Shabbos — drop-off is the following Monday.`
+    : null;
 
   return [
     `✅ Order Confirmed — ${order.orderNumber}`,
@@ -2195,6 +2320,7 @@ function buildConfirmationSms(order: {
     ``,
     `📅 Pickup: ${formatLongDate(order.pickupDate)}`,
     `📅 Drop-off by: ${formatLongDate(dropoff)}`,
+    ...(shabbosLine ? [``, shabbosLine] : []),
     ``,
     cutoffLine,
     ``,
@@ -2454,7 +2580,7 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
       res.send(twimlResponse(
         `To schedule a pickup, just text the word "clean" to this number. ` +
         `We'll ask for your name, address, and preferred pickup day, then confirm by SMS.\n\n` +
-        `Pickups must be requested by midnight the night before your service day. ` +
+        `Pickups run Mon–Thu — you choose the day. Same-day cutoff is 10 AM ET for most towns (12 PM noon for Glen Wild, Woodridge & Dairyland). Wed/Thu pickups come back the following Monday (no Fri delivery, no shabbos work).\n\n` +
         `Reply STOP to unsubscribe at any time.`,
       ));
       return;
@@ -2543,7 +2669,7 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
   // Triggered when a customer with a missed order texts back. We don't intercept
   // if they're already mid-order-flow (returning_confirm/name/town/etc.).
   const orderFlowSteps = new Set([
-    "returning_confirm", "name", "town", "colony", "location_details", "notes",
+    "returning_confirm", "name", "town", "colony", "location_details", "pickup_day", "notes",
     "refer_name", "refer_phone", "refer_confirm",
   ]);
   if (!convo || !orderFlowSteps.has(convo.step ?? "")) {
@@ -2566,14 +2692,11 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
           res.send(twimlResponse(`Sorry, that order is no longer eligible to reschedule. Text "clean" to start a new one.`));
           return;
         }
-        const choices: { date: Date; label: string }[] = [];
-        let cursor = new Date();
-        for (let i = 0; i < 3; i++) {
-          const next = nextPickupDate(missed.town, cursor);
-          if (!next) break;
-          choices.push({ date: next, label: formatLongDate(next) });
-          cursor = new Date(next); cursor.setDate(cursor.getDate() + 1);
-        }
+        const opts = nextPickupOptions(missed.town, 4);
+        const choices = opts.map((date) => {
+          const shabbos = dropoffPushedPastShabbos(date) ? " ⚠️ back next Mon" : "";
+          return { date, label: `${formatLongDate(date)}${shabbos}` };
+        });
         if (choices.length === 0) {
           res.send(twimlResponse(`Sorry, we don't have a pickup schedule for ${missed.town}. Please call (845) 606-0022.`));
           return;
@@ -2608,7 +2731,27 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
         res.send(twimlResponse(`Please reply with a number 1-${dates.length}, or "cancel".`));
         return;
       }
-      const newDate = dates[pick - 1]!;
+      let newDate = dates[pick - 1]!;
+      // Re-fetch the order to validate town + revalidate cutoff for newDate.
+      const [missedNow] = await db.select().from(ordersTable)
+        .where(and(eq(ordersTable.id, orderId), eq(ordersTable.phoneNumber, from), eq(ordersTable.status, "missed")))
+        .limit(1);
+      if (!missedNow) {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`Sorry, that order can no longer be rescheduled (it may have been updated). Text "clean" to start a new order.`));
+        return;
+      }
+      const validNow = nextPickupOptions(missedNow.town, 8).map(toDateOnly);
+      let bumped = false;
+      if (!validNow.includes(newDate)) {
+        if (!validNow[0]) {
+          await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+          res.send(twimlResponse(`Sorry, no pickup days available right now. Please call (845) 606-0022.`));
+          return;
+        }
+        newDate = validNow[0];
+        bumped = true;
+      }
       // Conditional update: only flip if the order is still missed and still
       // owned by this phone — guards against a stale conversation reviving an
       // order that was already handled in the dashboard.
@@ -2625,7 +2768,10 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
         res.send(twimlResponse(`Sorry, that order can no longer be rescheduled (it may have been updated). Text "clean" to start a new order.`));
         return;
       }
-      res.send(twimlResponse(`✅ Rescheduled! Your new pickup is ${formatLongDate(new Date(newDate + "T00:00:00"))}. Please have your bag out by 10:00 AM. Thanks!`));
+      const wave = waveOf(missedNow.town);
+      const bagReady = wave === "afternoon" ? "12:00 PM noon" : "10:00 AM";
+      const bumpedLine = bumped ? ` (auto-bumped — your earlier choice's cutoff just passed)` : ``;
+      res.send(twimlResponse(`✅ Rescheduled! Your new pickup is ${formatLongDate(new Date(newDate + "T00:00:00"))}${bumpedLine}. Please have your bag out by ${bagReady}. Thanks!`));
       return;
     }
 
@@ -2662,10 +2808,31 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
 
   if (step === "returning_confirm") {
     if (text === "yes" || text === "y") {
+      // Returning customer reused their saved address — now ask them to pick
+      // a pickup day. Same Mon–Thu picker as new customers, with the shabbos
+      // heads-up baked into the option labels.
+      if (!convo.town || !isPhase1(convo.town)) {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(
+          `Sorry, we don't service ${convo.town ?? "your saved town"} yet. Text "clean" to start a new order.`,
+        ));
+        return;
+      }
+      const opts = nextPickupOptions(convo.town, 4);
+      if (opts.length === 0) {
+        await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+        res.send(twimlResponse(`Sorry, no pickup days available right now. Please try again later.`));
+        return;
+      }
+      const dateCsv = opts.map(toDateOnly).join(",");
       await db.update(conversationsTable)
-        .set({ step: "notes", updatedAt: new Date() })
+        .set({ step: "pickup_day", items: dateCsv, updatedAt: new Date() })
         .where(eq(conversationsTable.phoneNumber, from));
-      res.send(twimlResponse(askForNotesMessage()));
+      const lineList = opts.map((d, i) => {
+        const shabbos = dropoffPushedPastShabbos(d) ? " ⚠️ back next Mon (after Shabbos)" : "";
+        return `${i + 1}. ${formatLongDate(d)}${shabbos}`;
+      }).join("\n");
+      res.send(twimlResponse(`📅 Which pickup day?\n\n${lineList}\n\nReply with the number.`));
       return;
     }
     if (text === "no" || text === "n") {
@@ -2748,14 +2915,67 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
     const gateAccess = !gateRaw || gateRaw.toLowerCase() === "none" || gateRaw.toLowerCase() === "no"
       ? null
       : gateRaw;
+    // Compute pickup-day options for the chosen town and advance to picker.
+    if (!convo.town || !isPhase1(convo.town)) {
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Sorry, we don't service ${convo.town ?? "that area"} yet. Text "clean" to start over.`,
+      ));
+      return;
+    }
+    const opts = nextPickupOptions(convo.town, 4);
+    if (opts.length === 0) {
+      await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(`Sorry, no pickup days available right now. Please try again later.`));
+      return;
+    }
+    const dateCsv = opts.map(toDateOnly).join(",");
     await db.update(conversationsTable)
       .set({
         colonyAddress: streetAddress!,
         unitNumber: unitNumber!,
         gateAccess,
-        step: "notes",
+        step: "pickup_day",
+        items: dateCsv,
         updatedAt: new Date(),
       })
+      .where(eq(conversationsTable.phoneNumber, from));
+    const lineList = opts.map((d, i) => {
+      const shabbos = dropoffPushedPastShabbos(d) ? " ⚠️ back next Mon (after Shabbos)" : "";
+      return `${i + 1}. ${formatLongDate(d)}${shabbos}`;
+    }).join("\n");
+    res.send(twimlResponse(`📅 Which pickup day?\n\n${lineList}\n\nReply with the number.`));
+    return;
+  }
+
+  if (step === "pickup_day") {
+    // items field carries the CSV of offered YYYY-MM-DD options. On a valid
+    // reply we collapse it down to just the chosen date and advance to notes.
+    let offered = (convo.items ?? "").split(",").filter(Boolean);
+    // Stash recovery: regenerate options if items got cleared / corrupted.
+    if (offered.length === 0 && convo.town && isPhase1(convo.town)) {
+      const fresh = nextPickupOptions(convo.town, 4);
+      if (fresh.length > 0) {
+        offered = fresh.map(toDateOnly);
+        await db.update(conversationsTable)
+          .set({ items: offered.join(","), updatedAt: new Date() })
+          .where(eq(conversationsTable.phoneNumber, from));
+        const lineList = fresh.map((d, i) => {
+          const shabbos = dropoffPushedPastShabbos(d) ? " ⚠️ back next Mon (after Shabbos)" : "";
+          return `${i + 1}. ${formatLongDate(d)}${shabbos}`;
+        }).join("\n");
+        res.send(twimlResponse(`📅 Which pickup day?\n\n${lineList}\n\nReply with the number.`));
+        return;
+      }
+    }
+    const pick = parseInt(text, 10);
+    if (isNaN(pick) || pick < 1 || pick > offered.length) {
+      res.send(twimlResponse(`Please reply with a number 1-${offered.length}.`));
+      return;
+    }
+    const chosen = offered[pick - 1]!;
+    await db.update(conversationsTable)
+      .set({ step: "notes", items: chosen, updatedAt: new Date() })
       .where(eq(conversationsTable.phoneNumber, from));
     res.send(twimlResponse(askForNotesMessage()));
     return;
@@ -2774,12 +2994,32 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
       ));
       return;
     }
-    const pickupDate = nextPickupDate(convo.town);
+    // Pickup date was chosen at the pickup_day step and stashed in items as
+    // YYYY-MM-DD. Fall back to soonest available if stash is missing (e.g.
+    // stale conversation from before the day-picker shipped).
+    let chosenStr = /^\d{4}-\d{2}-\d{2}$/.test(convo.items ?? "") ? convo.items! : null;
+    // Final-commit cutoff revalidation: if the customer chose a "today" slot
+    // before its wave cutoff but their notes reply landed after, snap forward
+    // to the next valid day so we don't book a same-day pickup we can't run.
+    const validNow = nextPickupOptions(convo.town, 8).map(toDateOnly);
+    let cutoffBumped = false;
+    if (chosenStr && !validNow.includes(chosenStr)) {
+      chosenStr = validNow[0] ?? null;
+      cutoffBumped = chosenStr != null;
+    }
+    let pickupDate: Date | null = null;
+    if (chosenStr) {
+      const [py, pm, pd] = chosenStr.split("-").map(Number);
+      pickupDate = new Date(py!, pm! - 1, pd!);
+    } else {
+      pickupDate = nextPickupDate(convo.town);
+    }
     if (!pickupDate) {
       await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
       res.send(twimlResponse(`Sorry, we don't service ${convo.town} yet. Please text "clean" to start over.`));
       return;
     }
+    void cutoffBumped; // bump flag surfaced via confirmation SMS already shows new date
 
     const orderNumber = await nextOrderNumber();
     await db.insert(ordersTable).values({
