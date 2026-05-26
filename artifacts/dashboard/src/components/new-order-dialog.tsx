@@ -47,7 +47,12 @@ export function NewOrderDialog() {
   const [pickupTouched, setPickupTouched] = useState(false);
   const qc = useQueryClient();
   const { mutateAsync, isPending } = useCreateOrder();
-  const { data: towns, isLoading: townsLoading, isError: townsError, refetch: refetchTowns } = useListTowns();
+  const { data: townsRaw, isLoading: townsLoading, isError: townsError, refetch: refetchTowns } = useListTowns();
+  // Defensive: under HMR / transient query states the data can briefly come
+  // through as a non-array (e.g. error envelope, undefined-replacement during
+  // module hot-swap). Normalize once so every consumer below can rely on a
+  // real array without crashing the dialog.
+  const towns = Array.isArray(townsRaw) ? townsRaw : [];
 
   function update<K extends keyof ReturnType<typeof emptyForm>>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -60,7 +65,7 @@ export function NewOrderDialog() {
   function onTownChange(town: string) {
     setForm((f) => {
       const next: typeof f = { ...f, town };
-      const sched = towns?.find((t) => t.name === town);
+      const sched = towns.find((t) => t.name === town);
       if (sched?.nextPickupDate && !pickupTouched) {
         next.pickupDate = sched.nextPickupDate;
       }
@@ -68,7 +73,7 @@ export function NewOrderDialog() {
     });
   }
 
-  const selectedTownSchedule = towns?.find((t) => t.name === form.town);
+  const selectedTownSchedule = towns.find((t) => t.name === form.town);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
