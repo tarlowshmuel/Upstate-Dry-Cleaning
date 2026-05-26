@@ -4,6 +4,30 @@ import type { ordersTable } from "@workspace/db/schema";
 
 type OrderRow = typeof ordersTable.$inferSelect;
 
+// Send an arbitrary SMS to the configured admin phone. Used by the customer
+// HELP → "Other" flow to forward free-text help requests. Never throws; SMS
+// failures are logged but must not blow up the webhook response.
+export async function notifyAdmin(message: string): Promise<boolean> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  const adminPhone = process.env.ADMIN_PHONE_NUMBER;
+  if (!sid || !token || !fromNumber || !adminPhone) {
+    logger.warn("notifyAdmin skipped — Twilio env or ADMIN_PHONE_NUMBER not set");
+    return false;
+  }
+  try {
+    const client = twilio(sid, token);
+    await client.messages.create({ to: adminPhone, from: fromNumber, body: message });
+    logger.info({ to: adminPhone }, "Admin notified");
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: msg }, "notifyAdmin failed");
+    return false;
+  }
+}
+
 // ─── Customer-facing status message ───────────────────────────────────────────
 // Returns null when this transition should NOT notify the customer.
 // Per product spec: only picked_up, delivered, and missed trigger an SMS.

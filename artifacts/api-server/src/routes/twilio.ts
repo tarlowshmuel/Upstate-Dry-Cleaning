@@ -4,9 +4,76 @@ import { db } from "@workspace/db";
 import { conversationsTable, ordersTable, referralsTable } from "@workspace/db/schema";
 import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
-import { customerStatusMessage, notifyCustomer, notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
+import { customerStatusMessage, notifyAdmin, notifyCustomer, notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
 
 const router = Router();
+
+// ─── HELP flow helpers ────────────────────────────────────────────────────────
+// Restores a customer's pre-HELP conversation state if one was stashed when
+// they entered the help menu, otherwise wipes the conversation row. Keeps the
+// help intercept non-destructive to mid-order/referral/reschedule flows.
+async function exitHelpRestoringPrev(from: string, stash: string | null): Promise<void> {
+  type Prev = {
+    step: string | null; name: string | null; town: string | null;
+    colony: string | null; colonyAddress: string | null;
+    unitNumber: string | null; gateAccess: string | null;
+    items: string | null; notes: string | null;
+  };
+  let prev: Prev | null = null;
+  if (stash) {
+    try {
+      const parsed = JSON.parse(stash) as { prev?: Prev };
+      prev = parsed.prev ?? null;
+    } catch { prev = null; }
+  }
+  if (!prev || !prev.step) {
+    await db.delete(conversationsTable).where(eq(conversationsTable.phoneNumber, from));
+    return;
+  }
+  await db.update(conversationsTable)
+    .set({
+      step: prev.step,
+      name: prev.name, town: prev.town, colony: prev.colony,
+      colonyAddress: prev.colonyAddress, unitNumber: prev.unitNumber,
+      gateAccess: prev.gateAccess, items: prev.items, notes: prev.notes,
+      updatedAt: new Date(),
+    })
+    .where(eq(conversationsTable.phoneNumber, from));
+}
+
+// In-memory rate limit for HELP→Other admin forwarding. Single-process server,
+// so a Map is enough; a restart clearing counts only helps legitimate users.
+// Limits: 60s cooldown between forwards, max 3 forwards per phone per 24h.
+const HELP_COOLDOWN_MS = 60_000;
+const HELP_DAILY_MAX = 3;
+const HELP_DAY_MS = 24 * 60 * 60 * 1000;
+const helpForwardLog = new Map<string, number[]>();
+
+function checkHelpRateLimit(from: string): { allowed: true } | { allowed: false; message: string } {
+  const now = Date.now();
+  const recent = (helpForwardLog.get(from) ?? []).filter((t) => now - t < HELP_DAY_MS);
+  if (recent.length > 0 && now - recent[recent.length - 1]! < HELP_COOLDOWN_MS) {
+    helpForwardLog.set(from, recent);
+    return {
+      allowed: false,
+      message:
+        `You just sent us a message — please give us a minute to respond before sending another. ` +
+        `For urgent needs, call (845) 606-0022.`,
+    };
+  }
+  if (recent.length >= HELP_DAILY_MAX) {
+    helpForwardLog.set(from, recent);
+    return {
+      allowed: false,
+      message:
+        `You've reached the daily limit for help messages. ` +
+        `Please call (845) 606-0022 and we'll get back to you as soon as we can.`,
+    };
+  }
+  recent.push(now);
+  helpForwardLog.set(from, recent);
+  return { allowed: true };
+}
 
 // ─── Towns + Schedule ─────────────────────────────────────────────────────────
 // Phase 1 Monday is now split into two waves so the driver can run a tight
@@ -1588,6 +1655,46 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
     return;
   }
 
+  // ── HELP keyword (Twilio CTA compliance + customer support) ──────────────
+  // Always intercept "help" / "info" regardless of where the customer is in
+  // any other flow — that's the whole point of HELP per carrier rules.
+  // Shows a numbered menu; option 4 ("Other") opens a free-text channel that
+  // forwards the next message straight to the admin phone.
+  if (text === "help" || text === "info") {
+    // Preserve any in-flight conversation state (mid-order booking, referral,
+    // reschedule) by stashing it into items as JSON. The HELP exit paths
+    // restore it so the customer can pick up where they left off.
+    const [existing] = await db.select().from(conversationsTable)
+      .where(eq(conversationsTable.phoneNumber, from)).limit(1);
+    const isHelpStep = existing?.step === "help_menu" || existing?.step === "help_other";
+    const stash = existing && !isHelpStep
+      ? JSON.stringify({
+          prev: {
+            step: existing.step, name: existing.name, town: existing.town,
+            colony: existing.colony, colonyAddress: existing.colonyAddress,
+            unitNumber: existing.unitNumber, gateAccess: existing.gateAccess,
+            items: existing.items, notes: existing.notes,
+          },
+        })
+      : (existing?.items ?? null); // keep an already-stashed prev across re-entry
+    await db.insert(conversationsTable)
+      .values({ phoneNumber: from, step: "help_menu", items: stash })
+      .onConflictDoUpdate({
+        target: conversationsTable.phoneNumber,
+        set: { step: "help_menu", items: stash, updatedAt: new Date() },
+      });
+    res.send(twimlResponse(
+      `Upstate Dry Cleaning — SMS pickup & delivery in Sullivan County, NY.\n\n` +
+      `How can we help?\n\n` +
+      `1. How to schedule a pickup\n` +
+      `2. Reschedule or cancel an order\n` +
+      `3. Pricing & payment\n` +
+      `4. Other — describe your issue\n\n` +
+      `Reply with a number 1-4. Reply STOP to unsubscribe. Msg & data rates may apply.`,
+    ));
+    return;
+  }
+
   // ── Referral commands (intercept before "clean" so they can't be hijacked) ──
   if (text === "credits" || text === "referrals" || text === "my referrals") {
     const stats = await getReferralStats(from);
@@ -1727,6 +1834,98 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
     .select().from(conversationsTable)
     .where(eq(conversationsTable.phoneNumber, from))
     .limit(1);
+
+  // ── HELP menu choice (set by the "help"/"info" intercept above) ──────────
+  if (convo?.step === "help_menu") {
+    if (text === "1") {
+      await exitHelpRestoringPrev(from, convo.items);
+      res.send(twimlResponse(
+        `To schedule a pickup, just text the word "clean" to this number. ` +
+        `We'll ask for your name, address, and preferred pickup day, then confirm by SMS.\n\n` +
+        `Pickups must be requested by midnight the night before your service day. ` +
+        `Reply STOP to unsubscribe at any time.`,
+      ));
+      return;
+    }
+    if (text === "2") {
+      await exitHelpRestoringPrev(from, convo.items);
+      res.send(twimlResponse(
+        `To reschedule or cancel an order, reply to the confirmation message we sent ` +
+        `you, or text "help" and choose option 4 to message us directly.\n\n` +
+        `If we marked an order as "missed" we'll text you a reschedule offer automatically.`,
+      ));
+      return;
+    }
+    if (text === "3") {
+      await exitHelpRestoringPrev(from, convo.items);
+      res.send(twimlResponse(
+        `Pricing is communicated at or before pickup based on your items. ` +
+        `Payment is due upon delivery via Zelle to (929) 345-0940, or as otherwise arranged.\n\n` +
+        `Questions about a specific charge? Text "help" and choose option 4.`,
+      ));
+      return;
+    }
+    if (text === "4" || text === "other") {
+      // Keep items (the prev-state stash) intact so cancel/forward can restore.
+      await db.update(conversationsTable)
+        .set({ step: "help_other", updatedAt: new Date() })
+        .where(eq(conversationsTable.phoneNumber, from));
+      res.send(twimlResponse(
+        `Sure — please describe what you need help with in your next message, ` +
+        `and we'll get back to you as soon as we can.\n\n` +
+        `(Reply "cancel" if you'd rather not.)`,
+      ));
+      return;
+    }
+    res.send(twimlResponse(
+      `Please reply with a number 1-4:\n\n` +
+      `1. How to schedule a pickup\n` +
+      `2. Reschedule or cancel an order\n` +
+      `3. Pricing & payment\n` +
+      `4. Other — describe your issue`,
+    ));
+    return;
+  }
+
+  // ── HELP "Other" — forward the customer's free-text message to admin ─────
+  if (convo?.step === "help_other") {
+    if (text === "cancel" || text === "stop" || text === "0" || text === "menu") {
+      await exitHelpRestoringPrev(from, convo.items);
+      res.send(twimlResponse(`No problem — closed. Text "help" anytime.`));
+      return;
+    }
+    // Basic quality gate before we burn an admin SMS on it.
+    if (raw.trim().length < 3) {
+      res.send(twimlResponse(
+        `Please type a brief description of what you need help with, or reply "cancel".`,
+      ));
+      return;
+    }
+    // Rate limit to prevent admin-spam abuse: max 3 forwards per phone per
+    // 24h, with a 60s cooldown between forwards. In-memory is fine — single
+    // process, and a reboot resetting counts only HELPS legitimate users.
+    const rl = checkHelpRateLimit(from);
+    if (!rl.allowed) {
+      await exitHelpRestoringPrev(from, convo.items);
+      res.send(twimlResponse(rl.message));
+      return;
+    }
+    await exitHelpRestoringPrev(from, convo.items);
+    // Truncate forwarded body so a long pasted blob can't fill admin SMS
+    // segments. Leaflet/popup-style escaping not needed (plain SMS body).
+    const snippet = raw.length > 500 ? raw.slice(0, 500) + "…[truncated]" : raw;
+    const forwarded = await notifyAdmin(
+      `📨 HELP request from ${from}:\n\n"${snippet}"\n\nReply to that number to respond.`,
+    );
+    res.send(twimlResponse(
+      forwarded
+        ? `Thanks — we got your message and a team member will reach out as soon as we can. ` +
+          `If it's urgent you can also call (845) 606-0022.`
+        : `Thanks — your message was received but our notification system is temporarily down. ` +
+          `Please call or text (845) 606-0022 directly. Sorry for the inconvenience!`,
+    ));
+    return;
+  }
 
   // ── Reschedule flow: pick a new pickup day for a missed order ────────────
   // Triggered when a customer with a missed order texts back. We don't intercept
