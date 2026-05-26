@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from "express";
 import twilio from "twilio";
 import { db } from "@workspace/db";
 import { conversationsTable, ordersTable, referralsTable } from "@workspace/db/schema";
-import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
+import { eq, and, gte, desc, asc, ilike, or, sql } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
 import { customerStatusMessage, notifyAdmin, notifyCustomer, notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
 
@@ -402,6 +402,9 @@ const ADMIN_MAIN_MENU = [
   "11. Filtered list (uses current filters)",
   "12. Delivery route (cleaners → homes)",
   "13. Earnings (today/week/month/all)",
+  "14. Bulk status update (drop off / ready / delivered)",
+  "15. Settings (fee, minimum, wholesale %)",
+  "16. Price list (edit prices)",
   "",
   'Sort: "sort newest|oldest|pickup|name"',
   'Range: "range today|week|all"',
@@ -478,6 +481,131 @@ const ADMIN_STATS_MENU = [
   "",
   "0. Back to menu",
 ].join("\n");
+
+const ADMIN_EARNINGS_MENU = [
+  "📊 EARNINGS — pick a range:",
+  "",
+  "1. Today",
+  "2. This week",
+  "3. This month",
+  "4. All time",
+  "",
+  "0. Back to menu",
+].join("\n");
+
+// Earnings summary used by both the earnings range submenu AND case "13"
+// callers. Reuses the same computeEarningsReport the dashboard hits so SMS
+// and dashboard never disagree — see .agents/memory/sms-dashboard-parity.md.
+async function buildEarningsSmsSummary(
+  range: "today" | "week" | "month" | "all",
+): Promise<string> {
+  const { computeEarningsReport } = await import("./earnings");
+  const r = await computeEarningsReport(range);
+  const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
+  const label = { today: "Today", week: "This week", month: "This month", all: "All time" }[range];
+  const byDayLines = r.byRouteDay
+    .slice(0, 5)
+    .map((d) => `  ${d.date === "no-date" ? "(no date)" : d.date}: ${d.count} · ${fmt(d.revenueCents)}`)
+    .join("\n");
+  return [
+    `📊 EARNINGS — ${label}`,
+    ``,
+    `Orders: ${r.orderCount}`,
+    `Gross: ${fmt(r.grossRevenueCents)}`,
+    `  Items: ${fmt(r.itemsRevenueCents)} (wholesale base)`,
+    `  Fees: ${fmt(r.feesCollectedCents)} (kept in full)`,
+    `Paid: ${fmt(r.paidCents)}  ·  Outstanding: ${fmt(r.outstandingCents)}`,
+    `By method: Zelle ${fmt(r.byMethod.zelle)} · Cash ${fmt(r.byMethod.cash)} · Unspec ${fmt(r.byMethod.unknown)}`,
+    `Profit est: ${fmt(r.profitEstimateCents)} (${r.wholesalePercent}% wholesale on items only)`,
+    ``,
+    byDayLines ? `By pickup day (top 5):\n${byDayLines}` : `(No orders in this range.)`,
+  ].join("\n");
+}
+
+async function buildAdminBulkMenu(): Promise<string> {
+  // Live counts so the operator sees how many orders each option will move
+  // BEFORE confirming — matches the dashboard's BulkActionsMenu badge UX.
+  const [pickedUp, atCleaners, ready] = await Promise.all([
+    db.$count(ordersTable, eq(ordersTable.status, "picked_up")),
+    db.$count(ordersTable, eq(ordersTable.status, "at_cleaners")),
+    db.$count(ordersTable, eq(ordersTable.status, "ready")),
+  ]);
+  return [
+    `📦 BULK STATUS UPDATE`,
+    ``,
+    `1. Drop all at cleaners  (${pickedUp} picked-up → at-cleaners)`,
+    `2. Mark all ready        (${atCleaners} at-cleaners → ready)`,
+    `3. Mark all delivered    (${ready} ready → delivered)`,
+    ``,
+    `Customers are notified per order, same as the dashboard.`,
+    ``,
+    `0. Back to menu`,
+  ].join("\n");
+}
+
+async function buildAdminSettingsMenu(): Promise<string> {
+  const { SETTING_KEYS, SETTING_DEFAULTS, settingsTable } = await import("@workspace/db/schema");
+  const rows = await db.select().from(settingsTable);
+  const map: Record<string, number> = {};
+  for (const r of rows) map[r.key] = r.value;
+  const fee = map[SETTING_KEYS.feeCents] ?? SETTING_DEFAULTS[SETTING_KEYS.feeCents]!;
+  const min = map[SETTING_KEYS.orderMinimumCents] ?? SETTING_DEFAULTS[SETTING_KEYS.orderMinimumCents]!;
+  const wh = map[SETTING_KEYS.wholesalePercent] ?? SETTING_DEFAULTS[SETTING_KEYS.wholesalePercent]!;
+  const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
+  return [
+    `⚙️ SETTINGS`,
+    ``,
+    `1. Delivery fee       — currently ${fmt(fee)}`,
+    `2. Order minimum      — currently ${fmt(min)}`,
+    `3. Wholesale %        — currently ${wh}% (items only)`,
+    ``,
+    `Changes apply to NEW orders; existing orders keep their snapshot.`,
+    ``,
+    `0. Back to menu`,
+  ].join("\n");
+}
+
+type SettingKey = "feeCents" | "orderMinimumCents" | "wholesalePercent";
+async function updateOneSetting(key: SettingKey, value: number): Promise<void> {
+  const { SETTING_KEYS, settingsTable } = await import("@workspace/db/schema");
+  const dbKey = SETTING_KEYS[key];
+  await db
+    .insert(settingsTable)
+    .values({ key: dbKey, value, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: settingsTable.key,
+      set: { value, updatedAt: new Date() },
+    });
+}
+
+async function buildPriceListIdsScratch(): Promise<string> {
+  const { priceListTable } = await import("@workspace/db/schema");
+  const rows = await db
+    .select({ id: priceListTable.id })
+    .from(priceListTable)
+    .where(eq(priceListTable.active, true))
+    .orderBy(asc(priceListTable.sortOrder), asc(priceListTable.id));
+  return rows.map((r) => r.id).join(",");
+}
+
+async function buildAdminPriceListMenu(): Promise<string> {
+  const { priceListTable } = await import("@workspace/db/schema");
+  const rows = await db
+    .select()
+    .from(priceListTable)
+    .where(eq(priceListTable.active, true))
+    .orderBy(asc(priceListTable.sortOrder), asc(priceListTable.id));
+  const lines = rows.map(
+    (r, i) => `${i + 1}. ${r.name} — $${(r.priceCents / 100).toFixed(2)}`,
+  );
+  return [
+    `💲 PRICE LIST (${rows.length} active)`,
+    ``,
+    ...(lines.length ? lines : ["(no active items)"]),
+    ``,
+    `Reply with a number to edit, "+" to add a new item, or "0" to go back.`,
+  ].join("\n");
+}
 
 function adminUpdateMenu(order: OrderRow): string {
   return [
@@ -1188,9 +1316,245 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
       return `Please reply 1-14, or "0" to go back.\n\n${order ? adminUpdateMenu(order) : ""}`;
     }
+    // "6 = Mark paid" detours through a payment-method prompt so SMS records
+    // cash/zelle the same way the dashboard does (parity with paidMethod
+    // column). All other choices fall through to the immediate apply path.
+    if (text === "6") {
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      if (!order) {
+        await setAdminStep(from, "admin_main");
+        return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      await setAdminStep(from, "admin_paid_method", String(id));
+      return (
+        `💰 How did #${order.id} (${order.name}) pay?\n\n` +
+        `1. Zelle\n` +
+        `2. Cash\n` +
+        `3. Skip (mark paid, no method recorded)\n` +
+        `0. Cancel`
+      );
+    }
     const result = await actionApplyUpdate(id, text);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Paid method picker (after update→6) ───────────────────────────────────
+  if (step === "admin_paid_method") {
+    const id = parseInt(session?.items ?? "", 10);
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that order.\n\n" + ADMIN_MAIN_MENU;
+    }
+    let method: "zelle" | "cash" | null;
+    if (text === "1") method = "zelle";
+    else if (text === "2") method = "cash";
+    else if (text === "3") method = null;
+    else return `Please reply 1, 2, 3, or "0" to cancel.`;
+    const { markOrderPaid } = await import("../lib/paid-toggle");
+    const result = await markOrderPaid(id, { paid: true, paidMethod: method });
+    await setAdminStep(from, "admin_main");
+    if (!result) return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+    const label = method ? method.toUpperCase() : "no method";
+    return `✅ Order #${id} (${result.order.name}) — marked PAID (${label}).\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Earnings range picker ─────────────────────────────────────────────────
+  if (step === "admin_earnings_pick") {
+    let range: "today" | "week" | "month" | "all" | null = null;
+    if (text === "1") range = "today";
+    else if (text === "2") range = "week";
+    else if (text === "3") range = "month";
+    else if (text === "4") range = "all";
+    else return `Please reply 1-4, or "0" to go back.\n\n${ADMIN_EARNINGS_MENU}`;
+    const summary = await buildEarningsSmsSummary(range);
+    await setAdminStep(from, "admin_main");
+    return `${summary}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Bulk status transitions ────────────────────────────────────────────────
+  if (step === "admin_bulk_pick") {
+    const { bulkTransitionStatus } = await import("../lib/bulk-status");
+    let result: { updated: number; label: string } | null = null;
+    if (text === "1") {
+      const r = await bulkTransitionStatus({ from: "picked_up", to: "at_cleaners" });
+      result = { updated: r.updated, label: "dropped at cleaners" };
+    } else if (text === "2") {
+      const r = await bulkTransitionStatus({ from: "at_cleaners", to: "ready" });
+      result = { updated: r.updated, label: "marked ready" };
+    } else if (text === "3") {
+      const r = await bulkTransitionStatus({ from: "ready", to: "delivered" });
+      result = { updated: r.updated, label: "marked delivered" };
+    } else {
+      return `Please reply 1-3, or "0" to go back.\n\n${await buildAdminBulkMenu()}`;
+    }
+    await setAdminStep(from, "admin_main");
+    const word = result.updated === 1 ? "order" : "orders";
+    return `✅ ${result.updated} ${word} ${result.label}. Customers notified.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Settings: pick which to edit ──────────────────────────────────────────
+  if (step === "admin_settings_pick") {
+    if (text === "1") {
+      await setAdminStep(from, "admin_settings_fee");
+      return `💵 New delivery fee in dollars? (e.g. "5" for $5.00; "0" allowed)\n\nReply "cancel" to abort.`;
+    }
+    if (text === "2") {
+      await setAdminStep(from, "admin_settings_min");
+      return `📉 New order minimum in dollars? (e.g. "10" for $10.00; "0" for no minimum)\n\nReply "cancel" to abort.`;
+    }
+    if (text === "3") {
+      await setAdminStep(from, "admin_settings_wholesale");
+      return `🧺 New wholesale percentage? 0-100 (e.g. "50" — items only, never delivery)\n\nReply "cancel" to abort.`;
+    }
+    return `Please reply 1-3, or "0" to go back.\n\n${await buildAdminSettingsMenu()}`;
+  }
+  if (step === "admin_settings_fee") {
+    if (text === "cancel") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const dollars = Number(text);
+    if (!Number.isFinite(dollars) || dollars < 0 || dollars > 1000) {
+      return `Enter a number between 0 and 1000, or "cancel".`;
+    }
+    const cents = Math.round(dollars * 100);
+    await updateOneSetting("feeCents", cents);
+    await setAdminStep(from, "admin_main");
+    return `✅ Delivery fee set to $${(cents / 100).toFixed(2)} (applies to NEW orders only — existing orders keep their snapshot).\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+  if (step === "admin_settings_min") {
+    if (text === "cancel") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const dollars = Number(text);
+    if (!Number.isFinite(dollars) || dollars < 0 || dollars > 10000) {
+      return `Enter a number between 0 and 10000, or "cancel".`;
+    }
+    const cents = Math.round(dollars * 100);
+    await updateOneSetting("orderMinimumCents", cents);
+    await setAdminStep(from, "admin_main");
+    return `✅ Order minimum set to $${(cents / 100).toFixed(2)}.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+  if (step === "admin_settings_wholesale") {
+    if (text === "cancel") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const pct = Number(text);
+    if (!Number.isInteger(pct) || pct < 0 || pct > 100) {
+      return `Enter a whole number 0-100, or "cancel".`;
+    }
+    await updateOneSetting("wholesalePercent", pct);
+    await setAdminStep(from, "admin_main");
+    return `✅ Wholesale percentage set to ${pct}% (affects earnings report only; items revenue only — delivery fees stay 100% yours).\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+
+  // ── Price list: list / pick item to edit / add new ────────────────────────
+  if (step === "admin_pricelist_pick") {
+    const ids = (session?.items ?? "").split(",").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+    if (text === "+" || text.toLowerCase() === "add" || text === "new") {
+      await setAdminStep(from, "admin_pricelist_new_name");
+      return `🆕 New price-list item name? (e.g. "Tuxedo")\n\n"0" to cancel.`;
+    }
+    const n = parseInt(text, 10);
+    if (isNaN(n) || n < 1 || n > ids.length) {
+      return `Reply with an item number (1-${ids.length}), "+" to add a new item, or "0" to go back.`;
+    }
+    const pickedId = ids[n - 1]!;
+    const { priceListTable } = await import("@workspace/db/schema");
+    const [item] = await db.select().from(priceListTable).where(eq(priceListTable.id, pickedId)).limit(1);
+    if (!item) {
+      await setAdminStep(from, "admin_main");
+      return `That item no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    await setAdminStep(from, "admin_pricelist_edit", String(pickedId));
+    return (
+      `✏️ ${item.name} — current price $${(item.priceCents / 100).toFixed(2)}\n\n` +
+      `Reply with the new price in dollars (e.g. "12.50"),\n` +
+      `or "delete" to deactivate this item,\n` +
+      `or "cancel" to abort.`
+    );
+  }
+  if (step === "admin_pricelist_edit") {
+    const id = parseInt(session?.items ?? "", 10);
+    if (isNaN(id)) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that item.\n\n" + ADMIN_MAIN_MENU;
+    }
+    if (text === "cancel") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const { priceListTable } = await import("@workspace/db/schema");
+    if (text.toLowerCase() === "delete" || text.toLowerCase() === "remove") {
+      const [row] = await db
+        .update(priceListTable)
+        .set({ active: false, updatedAt: new Date() })
+        .where(eq(priceListTable.id, id))
+        .returning();
+      await setAdminStep(from, "admin_main");
+      if (!row) return `That item no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+      return `🗑️ "${row.name}" deactivated (historical orders keep their prices).\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const dollars = Number(text);
+    if (!Number.isFinite(dollars) || dollars < 0 || dollars > 10000) {
+      return `Enter a price in dollars (e.g. "12.50"), "delete" to deactivate, or "cancel" to abort.`;
+    }
+    const cents = Math.round(dollars * 100);
+    const [row] = await db
+      .update(priceListTable)
+      .set({ priceCents: cents, updatedAt: new Date() })
+      .where(eq(priceListTable.id, id))
+      .returning();
+    await setAdminStep(from, "admin_main");
+    if (!row) return `That item no longer exists.\n\n${ADMIN_MAIN_MENU}`;
+    return `✅ "${row.name}" updated to $${(cents / 100).toFixed(2)} (new orders only — past receipts keep snapshotted prices).\n\n———\n\n${ADMIN_MAIN_MENU}`;
+  }
+  if (step === "admin_pricelist_new_name") {
+    if (text === "cancel") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const name = raw.trim();
+    if (!name || name.length > 60) {
+      return `Enter a name 1-60 chars, or "cancel" to abort.`;
+    }
+    await setAdminStep(from, "admin_pricelist_new_price", name);
+    return `💲 Price for "${name}" in dollars? (e.g. "12.50")\n\nReply "cancel" to abort.`;
+  }
+  if (step === "admin_pricelist_new_price") {
+    const name = session?.items ?? "";
+    if (!name) {
+      await setAdminStep(from, "admin_main");
+      return "Lost track of that item.\n\n" + ADMIN_MAIN_MENU;
+    }
+    if (text === "cancel") {
+      await setAdminStep(from, "admin_main");
+      return `Cancelled.\n\n${ADMIN_MAIN_MENU}`;
+    }
+    const dollars = Number(text);
+    if (!Number.isFinite(dollars) || dollars < 0 || dollars > 10000) {
+      return `Enter a price in dollars (e.g. "12.50"), or "cancel" to abort.`;
+    }
+    const cents = Math.round(dollars * 100);
+    const { priceListTable } = await import("@workspace/db/schema");
+    try {
+      const [row] = await db
+        .insert(priceListTable)
+        .values({ name, priceCents: cents, updatedAt: new Date() })
+        .returning();
+      await setAdminStep(from, "admin_main");
+      return `✅ Added "${row!.name}" at $${(cents / 100).toFixed(2)}.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    } catch (err) {
+      await setAdminStep(from, "admin_main");
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/unique/i.test(msg)) {
+        return `❌ An item named "${name}" already exists. Pick option 16 again and edit it instead.\n\n${ADMIN_MAIN_MENU}`;
+      }
+      throw err;
+    }
   }
 
   // ── Delete confirmation ────────────────────────────────────────────────────
@@ -1546,32 +1910,20 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       return message;
     }
     case "13": {
-      // Earnings summary — reuses the same computeEarningsReport the dashboard
-      // hits, so SMS and dashboard never disagree on revenue. Default to "week"
-      // (most actionable view for the operator on the go).
-      const { computeEarningsReport } = await import("./earnings");
-      const r = await computeEarningsReport("week");
-      const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
-      await setAdminStep(from, "admin_main");
-      const byDayLines = r.byRouteDay
-        .slice(0, 5)
-        .map((d) => `  ${d.date === "no-date" ? "(no date)" : d.date}: ${d.count} · ${fmt(d.revenueCents)}`)
-        .join("\n");
-      return [
-        `📊 EARNINGS — This week`,
-        ``,
-        `Orders: ${r.orderCount}`,
-        `Gross: ${fmt(r.grossRevenueCents)}`,
-        `  Items: ${fmt(r.itemsRevenueCents)}`,
-        `  Fees: ${fmt(r.feesCollectedCents)}`,
-        `Paid: ${fmt(r.paidCents)}  ·  Outstanding: ${fmt(r.outstandingCents)}`,
-        `By method: Zelle ${fmt(r.byMethod.zelle)} · Cash ${fmt(r.byMethod.cash)} · Unspec ${fmt(r.byMethod.unknown)}`,
-        `Profit est: ${fmt(r.profitEstimateCents)} (${r.wholesalePercent}% wholesale)`,
-        ``,
-        byDayLines ? `By pickup day (top 5):\n${byDayLines}` : `(No orders yet this week.)`,
-        ``,
-        `0. Back to menu`,
-      ].join("\n");
+      await setAdminStep(from, "admin_earnings_pick");
+      return ADMIN_EARNINGS_MENU;
+    }
+    case "14": {
+      await setAdminStep(from, "admin_bulk_pick");
+      return await buildAdminBulkMenu();
+    }
+    case "15": {
+      await setAdminStep(from, "admin_settings_pick");
+      return await buildAdminSettingsMenu();
+    }
+    case "16": {
+      await setAdminStep(from, "admin_pricelist_pick", await buildPriceListIdsScratch());
+      return await buildAdminPriceListMenu();
     }
     default:
       await setAdminStep(from, "admin_main");

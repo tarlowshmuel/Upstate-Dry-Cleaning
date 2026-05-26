@@ -9,3 +9,4 @@
 - [Bulk status transitions](bulk-status-transitions.md) — "mark all X→Y" must be a server-side conditional UPDATE WHERE status='X'; client fanout rewinds orders that moved on between fetch and confirm.
 - [HELP intercept state stash](help-intercept-state-stash.md) — global SMS keywords (HELP/INFO) must stash + restore prior convo state, or mid-booking customers silently lose progress.
 - [Admin-forward rate limiting](admin-forward-rate-limit.md) — any customer-triggered SMS to admin needs per-phone cooldown + daily cap or it becomes a free admin-spam vector.
+- [Admin SMS cancel keyword](admin-sms-cancel-keyword.md) — global "0" intercept eats numeric-0 inputs; numeric-data steps must use "cancel" as abort, not "0".

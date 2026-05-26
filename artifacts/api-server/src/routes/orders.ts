@@ -7,6 +7,7 @@ import { notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/c
 import { sendOutstandingReceipt } from "../lib/receipts";
 import { getFeeCents, computeOrderTotals } from "../lib/pricing";
 import { markOrderPaid } from "../lib/paid-toggle";
+import { bulkTransitionStatus } from "../lib/bulk-status";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -229,66 +230,19 @@ router.patch("/orders/:id/status", async (req, res) => {
 // Same server-side conditional UPDATE pattern as bulk-mark-ready — see
 // .agents/memory/bulk-status-transitions.md. Per-order customer notification
 // preserved for SMS↔dashboard parity.
-router.post("/orders/bulk-mark-at-cleaners", async (req, res) => {
-  const updated = await db
-    .update(ordersTable)
-    .set({ status: "at_cleaners" })
-    .where(eq(ordersTable.status, "picked_up"))
-    .returning();
-
-  for (const order of updated) {
-    notifyCustomerStatusChange(order, "at_cleaners").catch((err) => {
-      req.log.warn(
-        { err, orderId: order.id, status: "at_cleaners" },
-        "Customer notify failed (bulk-mark-at-cleaners path)",
-      );
-    });
-  }
-
-  req.log.info({ count: updated.length }, "Bulk-marked orders at cleaners");
-  res.json({ updated: updated.length, orders: updated });
+router.post("/orders/bulk-mark-at-cleaners", async (_req, res) => {
+  const r = await bulkTransitionStatus({ from: "picked_up", to: "at_cleaners" });
+  res.json(r);
 });
 
-// One-tap: every "ready" order → "delivered". Driver hits this after the
-// drop-off route is complete. Same conditional UPDATE pattern as siblings.
-router.post("/orders/bulk-mark-delivered", async (req, res) => {
-  const updated = await db
-    .update(ordersTable)
-    .set({ status: "delivered" })
-    .where(eq(ordersTable.status, "ready"))
-    .returning();
-
-  for (const order of updated) {
-    notifyCustomerStatusChange(order, "delivered").catch((err) => {
-      req.log.warn(
-        { err, orderId: order.id, status: "delivered" },
-        "Customer notify failed (bulk-mark-delivered path)",
-      );
-    });
-  }
-
-  req.log.info({ count: updated.length }, "Bulk-marked orders delivered");
-  res.json({ updated: updated.length, orders: updated });
+router.post("/orders/bulk-mark-delivered", async (_req, res) => {
+  const r = await bulkTransitionStatus({ from: "ready", to: "delivered" });
+  res.json(r);
 });
 
-router.post("/orders/bulk-mark-ready", async (req, res) => {
-  const updated = await db
-    .update(ordersTable)
-    .set({ status: "ready" })
-    .where(eq(ordersTable.status, "at_cleaners"))
-    .returning();
-
-  for (const order of updated) {
-    notifyCustomerStatusChange(order, "ready").catch((err) => {
-      req.log.warn(
-        { err, orderId: order.id, status: "ready" },
-        "Customer notify failed (bulk-mark-ready path)",
-      );
-    });
-  }
-
-  req.log.info({ count: updated.length }, "Bulk-marked orders ready");
-  res.json({ updated: updated.length, orders: updated });
+router.post("/orders/bulk-mark-ready", async (_req, res) => {
+  const r = await bulkTransitionStatus({ from: "at_cleaners", to: "ready" });
+  res.json(r);
 });
 
 router.delete("/orders/:id", async (req, res) => {
