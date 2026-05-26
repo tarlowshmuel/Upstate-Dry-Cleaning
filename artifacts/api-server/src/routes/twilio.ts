@@ -8,27 +8,39 @@ import { nextOrderNumber } from "../lib/order-number";
 const router = Router();
 
 // ─── Towns + Schedule ─────────────────────────────────────────────────────────
-// Corridor-based split: Monday handles the Rt 42 south corridor (tight cluster
-// around Fallsburg), Tuesday handles the Rt 17 west / Liberty corridor.
-// Drop-off is always pickup + 2 days.
-// Phase 1 = currently servicing. Phase 2 = on the roadmap, not bookable yet.
-// When a Phase 2 town gets picked, the customer flow politely declines and the
-// admin booking flows hide it. Flip `phase: 2 -> 1` here to launch a town —
-// nothing else needs to change.
-type TownSchedule = { pickup: string; dropoff: string; phase: 1 | 2 };
+// Phase 1 Monday is now split into two waves so the driver can run a tight
+// morning loop on the dense central-western core, then a shorter afternoon loop
+// on the lighter eastern/southern edges. Drop-off is always pickup + 2 days.
+//
+// Phase 1 = currently servicing (bookable). Each Phase 1 town belongs to one
+// wave with its own same-day cutoff:
+//   morning   — bags out by 10 AM (5 towns, depot loop ends back at Fallsburg)
+//   afternoon — bags out by 12 PM noon (3 towns, lighter eastern/southern edges)
+//
+// Phase 2 = on the roadmap, not bookable yet. Customer flow politely declines
+// these and admin booking hides them. Flip `phase: 2 -> 1` (and pick a `wave`)
+// to launch a town — nothing else needs to change.
+export type RouteWave = "morning" | "afternoon";
+type TownSchedule = {
+  pickup: string;
+  dropoff: string;
+  phase: 1 | 2;
+  wave?: RouteWave;
+};
 const TOWN_SCHEDULE: Record<string, TownSchedule> = {
-  // ── Phase 1 · Monday: Rt 42 / Rt 52 corridor (eastern Sullivan) ──────────
-  "Fallsburg":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "South Fallsburg":  { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Woodbourne":       { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Greenfield Park":  { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Loch Sheldrake":   { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Hurleyville":      { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Woodridge":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Mountaindale":     { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Dairyland":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  "Glen Wild":        { pickup: "Monday",  dropoff: "Wednesday", phase: 1 },
-  // ── Phase 2 · Rt 17 west / Liberty corridor — coming soon, not bookable ──
+  // ── Phase 1 · Monday MORNING wave (bags out by 10 AM) ───────────────────
+  "Fallsburg":        { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
+  "South Fallsburg":  { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
+  "Woodbourne":       { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
+  "Loch Sheldrake":   { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
+  "Hurleyville":      { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "morning"   },
+  // ── Phase 1 · Monday AFTERNOON wave (bags out by 12 PM noon) ────────────
+  "Woodridge":        { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "afternoon" },
+  "Glen Wild":        { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "afternoon" },
+  "Dairyland":        { pickup: "Monday", dropoff: "Wednesday", phase: 1, wave: "afternoon" },
+  // ── Phase 2 · coming soon, not bookable ──────────────────────────────────
+  "Greenfield Park":  { pickup: "Monday",  dropoff: "Wednesday", phase: 2 },
+  "Mountaindale":     { pickup: "Monday",  dropoff: "Wednesday", phase: 2 },
   "Rock Hill":        { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
   "Monticello":       { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
   "Kiamesha Lake":    { pickup: "Tuesday", dropoff: "Thursday",  phase: 2 },
@@ -44,35 +56,37 @@ function isPhase1(town: string): boolean {
   return TOWN_SCHEDULE[town]?.phase === 1;
 }
 
-// Driving order within each corridor — kept here so the route view can sort
-// stops in the order the driver actually visits them.
-// Monday (Rt 42/52): Fallsburg → South Fallsburg → Woodbourne → Greenfield Park
-//   → Loch Sheldrake → Hurleyville → Woodridge → Mountaindale → Dairyland → Glen Wild.
-// Tuesday (Rt 17):    Rock Hill → Monticello → Kiamesha Lake → Ferndale → Liberty
-//   → Parksville → Livingston Manor.
-const TOWN_ROUTE_ORDER: string[] = [
-  "Fallsburg",
-  "South Fallsburg",
-  "Woodbourne",
-  "Greenfield Park",
-  "Loch Sheldrake",
-  "Hurleyville",
-  "Woodridge",
-  "Mountaindale",
-  "Dairyland",
-  "Glen Wild",
-  "Rock Hill",
-  "Monticello",
-  "Kiamesha Lake",
-  "Ferndale",
-  "Liberty",
-  "Parksville",
-  "Livingston Manor",
-];
+// Driving order per wave — depot bookends both. The optimizer in
+// lib/route-service.ts respects this town ordering when computing a route, so
+// stops always appear in the order the driver actually visits them.
+//   Morning   : depot (Fallsburg) → Woodbourne → Loch Sheldrake → Hurleyville
+//               → South Fallsburg → Fallsburg → depot
+//   Afternoon : depot → Glen Wild → Woodridge → Dairyland → depot
+export const WAVE_ORDER: Record<RouteWave, string[]> = {
+  morning: ["Woodbourne", "Loch Sheldrake", "Hurleyville", "South Fallsburg", "Fallsburg"],
+  afternoon: ["Glen Wild", "Woodridge", "Dairyland"],
+};
 
-function townRouteIndex(town: string): number {
-  const i = TOWN_ROUTE_ORDER.indexOf(town);
-  return i === -1 ? 999 : i;
+// Same-day cutoff per wave. Customer flow uses this to decide whether today
+// still qualifies for pickup (vs. bumping to next Monday).
+export const WAVE_CUTOFF_HOUR: Record<RouteWave, number> = {
+  morning: 10,    // 10:00 AM
+  afternoon: 12,  // 12:00 PM noon
+};
+
+function waveOf(town: string): RouteWave | null {
+  return TOWN_SCHEDULE[town]?.wave ?? null;
+}
+export function townsForWave(wave: RouteWave): string[] {
+  return Object.entries(TOWN_SCHEDULE)
+    .filter(([, s]) => s.wave === wave)
+    .map(([name]) => name);
+}
+function waveCutoffLabel(wave: RouteWave): string {
+  return wave === "morning" ? "10:00 AM" : "12:00 PM (noon)";
+}
+function waveBagsOutLabel(wave: RouteWave): string {
+  return wave === "morning" ? "bags out by 10 AM" : "bags out by 12 PM noon";
 }
 
 const DAY_NUM: Record<string, number> = {
@@ -95,7 +109,7 @@ const TERMS_URL = `${PUBLIC_URL}/legal`;
 
 function welcomeIntro(): string {
   return [
-    `⏰ Orders must be placed by 12:00 AM (midnight) the night before your pickup day.`,
+    `⏰ Same-day pickup if you order in time: by 10 AM for most towns, by 12 PM noon for Glen Wild, Woodridge & Dairyland. You'll see your exact cutoff when you place your order.`,
     `💵 Payment: Cash or Zelle to ${PAYMENT_PHONE} on delivery.`,
     `🎁 Refer ${REFERRAL_THRESHOLD} neighbors who place a first paid pickup and get a FREE pickup (up to $${REFERRAL_CREDIT_USD}). Text "refer" to add one.`,
     `📄 Terms: ${TERMS_URL}`,
@@ -140,19 +154,67 @@ function toDateOnly(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// ── Business timezone helpers ─────────────────────────────────────────────
+// The business operates in America/New_York. In production, the server runs
+// in UTC, so naive `now.getDay()`/`now.getHours()` will incorrectly bump a
+// 9:59 AM ET customer past the 10 AM morning cutoff. All scheduling-day and
+// cutoff-hour decisions must go through `etParts()` so we get the wall-clock
+// time the customer actually sees.
+const BUSINESS_TZ = "America/New_York";
+export function etParts(now: Date = new Date()): {
+  year: number; month: number; day: number; hour: number; dayOfWeek: number;
+} {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hour12: false, weekday: "short",
+  });
+  const parts: Record<string, string> = {};
+  for (const p of fmt.formatToParts(now)) {
+    if (p.type !== "literal") parts[p.type] = p.value;
+  }
+  const dayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  // Intl may emit "24" instead of "00" for midnight in 24-hour mode.
+  const rawHour = parseInt(parts.hour!, 10);
+  return {
+    year: parseInt(parts.year!, 10),
+    month: parseInt(parts.month!, 10),
+    day: parseInt(parts.day!, 10),
+    hour: rawHour === 24 ? 0 : rawHour,
+    dayOfWeek: dayMap[parts.weekday!]!,
+  };
+}
+export function etTodayDateOnly(now: Date = new Date()): string {
+  const { year, month, day } = etParts(now);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 function nextPickupDate(town: string, now: Date = new Date()): Date | null {
   const schedule = TOWN_SCHEDULE[town];
   if (!schedule) return null;
   const target = DAY_NUM[schedule.pickup];
   if (target === undefined) return null;
-  const today = now.getDay();
-  let daysUntil = (target - today + 7) % 7;
-  // Cutoff: midnight of pickup day. If today === pickup day, push to next week.
-  if (daysUntil === 0) daysUntil = 7;
-  const result = new Date(now);
-  result.setHours(0, 0, 0, 0);
-  result.setDate(result.getDate() + daysUntil);
-  return result;
+  const et = etParts(now);
+  let daysUntil = (target - et.dayOfWeek + 7) % 7;
+  // Same-day cutoff: morning towns must place by 10 AM ET, afternoon by noon ET.
+  // If we're past the cutoff on pickup day, bump to next week.
+  // Phase 2 towns (no wave) fall back to midnight-before behavior.
+  if (daysUntil === 0) {
+    const wave = schedule.wave;
+    if (wave) {
+      if (et.hour >= WAVE_CUTOFF_HOUR[wave]) daysUntil = 7;
+    } else {
+      daysUntil = 7;
+    }
+  }
+  // Build pickup date from the ET calendar day so we don't drift across the
+  // UTC date boundary at night. DB column is date-only, so storing as
+  // server-local midnight of the right day is fine for downstream matching.
+  const d = new Date(et.year, et.month - 1, et.day);
+  d.setDate(d.getDate() + daysUntil);
+  return d;
 }
 
 function nextDropoffDate(pickupDate: Date): Date {
@@ -468,7 +530,10 @@ function routeHeader(dir: RouteDir): string {
 }
 function buildRouteDayMenu(dir: RouteDir = "pickup"): { message: string; dates: string[] } {
   const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Anchor on the ET calendar day, not the server's local day — otherwise a
+  // late-evening UTC server would show tomorrow's date as "today" to an ET admin.
+  const et = etParts();
+  const today = new Date(et.year, et.month - 1, et.day);
   const header = dir === "delivery"
     ? "🚚 DELIVERY ROUTE — pick a day (cleaners → homes):"
     : "🚚 ROUTE — pick a day:";
@@ -486,24 +551,37 @@ function buildRouteDayMenu(dir: RouteDir = "pickup"): { message: string; dates: 
   return { message: lines.join("\n"), dates };
 }
 
-async function fetchRouteOrders(date: string, dir: RouteDir) {
-  if (dir === "delivery") {
+// Returns the wave-filtered orders plus any "orphan" orders — orders eligible
+// for today's route by date/status but whose town isn't assigned to any wave.
+// Orphans must surface as a warning so they don't silently disappear when an
+// admin renames a town or a Phase 2 leftover sits in the queue.
+async function fetchRouteOrders(date: string, dir: RouteDir, wave: RouteWave): Promise<{
+  orders: typeof ordersTable.$inferSelect[];
+  orphans: typeof ordersTable.$inferSelect[];
+}> {
+  const waveTownSet = new Set(townsForWave(wave));
+  const otherWaveTownSet = new Set(townsForWave(wave === "morning" ? "afternoon" : "morning"));
+  const rows = dir === "delivery"
     // Delivery = anything currently at the cleaners, ready to be returned home.
     // We don't filter by pickupDate — once an order is "picked_up", it sits at
     // the cleaners until delivered, regardless of which day it was collected.
-    return db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"));
-  }
-  return db.select().from(ordersTable)
-    .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
+    ? await db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"))
+    : await db.select().from(ordersTable)
+        .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
+  const orders = rows.filter((o) => waveTownSet.has(o.town));
+  const orphans = rows.filter((o) => !waveTownSet.has(o.town) && !otherWaveTownSet.has(o.town));
+  return { orders, orphans };
 }
 
 function formatRouteMessage(
   dir: RouteDir,
   dateLabel: string,
+  wave: RouteWave,
   orders: { id: number; unitNumber: string; name: string; gateAccess: string | null; phoneNumber: string }[],
   route: { stops: { colony: string; addressHint: string | null; town: string; orderIds: number[] }[]; totalDistanceMiles: number; start: { address: string }; end: { address: string }; warnings: string[] },
 ): string {
-  let msg = `${routeHeader(dir)} — ${dateLabel} — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
+  const waveTag = wave === "morning" ? "MORNING" : "AFTERNOON";
+  let msg = `${routeHeader(dir)} ${waveTag} (${waveBagsOutLabel(wave)}) — ${dateLabel} — ${route.stops.length} stop${route.stops.length !== 1 ? "s" : ""}`;
   if (route.totalDistanceMiles > 0) msg += ` · ~${route.totalDistanceMiles} mi`;
   msg += `\nStart: ${route.start.address}\n`;
   route.stops.forEach((s, i) => {
@@ -519,20 +597,42 @@ function formatRouteMessage(
   return msg;
 }
 
-async function actionRouteForDate(date: string, dir: RouteDir = "pickup"): Promise<string> {
+async function actionRouteForDate(date: string, dir: RouteDir, wave: RouteWave): Promise<string> {
   const d = isoToDate(date);
   if (!isRouteDay(d)) {
     return `No route on ${WD_FULL[d.getDay()]} (${date}). The business runs Mon–Thu only.`;
   }
-  const orders = await fetchRouteOrders(date, dir);
+  const { orders, orphans } = await fetchRouteOrders(date, dir, wave);
+  const orphanWarning = orphans.length > 0
+    ? `\n\n⚠️ ${orphans.length} order${orphans.length !== 1 ? "s" : ""} not in any wave (towns: ${[...new Set(orphans.map((o) => o.town))].join(", ")}). Reassign the town(s) or update the order(s).`
+    : "";
   if (orders.length === 0) {
-    return dir === "delivery"
-      ? `No deliveries — nothing is currently at the cleaners.`
-      : `No pickups for ${date}.`;
+    const base = dir === "delivery"
+      ? `No ${wave} deliveries — nothing from that wave is currently at the cleaners.`
+      : `No ${wave} pickups for ${date}.`;
+    return base + orphanWarning;
   }
   const { computeOptimizedRoute } = await import("../lib/route-service");
-  const route = await computeOptimizedRoute(orders, dir);
-  return formatRouteMessage(dir, date, orders, route);
+  const route = await computeOptimizedRoute(orders, dir, { townOrder: WAVE_ORDER[wave] });
+  return formatRouteMessage(dir, date, wave, orders, route) + orphanWarning;
+}
+
+function buildWavePickerMenu(dir: RouteDir, date: string): string {
+  const d = isoToDate(date);
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dateLabel = `${wd[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
+  const header = dir === "delivery" ? "🚚 DELIVERY ROUTE" : "🚚 ROUTE";
+  return [
+    `${header} — ${dateLabel} — which wave?`,
+    ``,
+    `1. Morning  (bags out by 10 AM)`,
+    `   Woodbourne → Loch Sheldrake → Hurleyville → S. Fallsburg → Fallsburg`,
+    ``,
+    `2. Afternoon (bags out by 12 PM noon)`,
+    `   Glen Wild → Woodridge → Dairyland`,
+    ``,
+    `0. Back to menu`,
+  ].join("\n");
 }
 
 // ─── New-order (admin-initiated) flow scratch ─────────────────────────────────
@@ -552,24 +652,6 @@ function readScratch(s: string | null): NewOrderScratch {
   try { return JSON.parse(s) as NewOrderScratch; } catch { return {}; }
 }
 function writeScratch(o: NewOrderScratch): string { return JSON.stringify(o); }
-
-async function actionRoute(dir: RouteDir = "pickup"): Promise<string> {
-  const now = new Date();
-  if (!isRouteDay(now)) {
-    const which = dir === "delivery" ? "12" : "6";
-    return `No route today — ${WD_FULL[now.getDay()]} is not an operating day. The business runs Mon–Thu only. Use option ${which} to pick a different day.`;
-  }
-  const today = toDateOnly(now);
-  const orders = await fetchRouteOrders(today, dir);
-  if (orders.length === 0) {
-    return dir === "delivery"
-      ? `No deliveries — nothing is currently at the cleaners.`
-      : `No pickups for today's route.`;
-  }
-  const { computeOptimizedRoute } = await import("../lib/route-service");
-  const route = await computeOptimizedRoute(orders, dir);
-  return formatRouteMessage(dir, "today", orders, route);
-}
 
 async function actionStats(range: "today" | "week" | "all"): Promise<string> {
   let whereClause;
@@ -1194,7 +1276,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
-  // ── Route day picker (pickup or delivery) ─────────────────────────────────
+  // ── Route day picker → wave picker → render ───────────────────────────────
   if (step === "admin_route_pick_day" || step === "admin_delivery_pick_day") {
     const dir: RouteDir = step === "admin_delivery_pick_day" ? "delivery" : "pickup";
     const dates = (session?.items ?? "").split(",").filter(Boolean);
@@ -1202,7 +1284,20 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     const pick = parseInt(text, 10);
     if (pick < 1 || pick > dates.length) return `Please reply 1-${dates.length}, or "0" to go back.`;
     const date = dates[pick - 1]!;
-    const result = await actionRouteForDate(date, dir);
+    const nextStep = dir === "delivery" ? "admin_delivery_pick_wave" : "admin_route_pick_wave";
+    await setAdminStep(from, nextStep, date);
+    return buildWavePickerMenu(dir, date);
+  }
+  if (step === "admin_route_pick_wave" || step === "admin_delivery_pick_wave") {
+    const dir: RouteDir = step === "admin_delivery_pick_wave" ? "delivery" : "pickup";
+    const date = (session?.items ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      await setAdminStep(from, "admin_main");
+      return `Lost track of which day — please start again.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    if (!/^[12]$/.test(text)) return `Reply 1 (Morning) or 2 (Afternoon), or "0" to go back.`;
+    const wave: RouteWave = text === "1" ? "morning" : "afternoon";
+    const result = await actionRouteForDate(date, dir, wave);
     await setAdminStep(from, "admin_main");
     return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
@@ -1365,6 +1460,13 @@ function buildConfirmationSms(order: {
   const dropoff = nextDropoffDate(order.pickupDate);
   const addr = order.colonyAddress ? `${order.colonyAddress}, ` : "";
   const notesBlock = order.notes ? [``, `📝 Notes: ${order.notes}`] : [];
+  const wave = waveOf(order.town);
+  const cutoffLine = wave
+    ? `⏰ Same-day cutoff: ${waveCutoffLabel(wave)} on your pickup day. After that, your order moves to next week.`
+    : `⏰ Order cutoff: 12:00 AM the night before your pickup day.`;
+  const bagsOutLine = wave
+    ? `📋 Please have your items bagged and ready by ${wave === "morning" ? "10:00 AM" : "12:00 PM noon"} on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`
+    : `📋 Please have your items bagged and ready by 10:00 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`;
 
   return [
     `✅ Order Confirmed — ${order.orderNumber}`,
@@ -1376,9 +1478,9 @@ function buildConfirmationSms(order: {
     `📅 Pickup: ${formatLongDate(order.pickupDate)}`,
     `📅 Drop-off by: ${formatLongDate(dropoff)}`,
     ``,
-    `⏰ Order cutoff: 12:00 AM the night before your pickup day.`,
+    cutoffLine,
     ``,
-    `📋 Please have your items bagged and ready by 10:00 AM on pickup day. Unprepared orders cannot be picked up. Thank you! 🙏`,
+    bagsOutLine,
   ].join("\n");
 }
 

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { ordersTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { computeOptimizedRoute } from "../lib/route-service";
+import { WAVE_ORDER, townsForWave, etTodayDateOnly, type RouteWave } from "./twilio";
 
 const router = Router();
 
@@ -24,22 +25,40 @@ function isoToDate(iso: string): Date {
 
 router.get("/route/today", async (req, res) => {
   const requested = typeof req.query.date === "string" ? req.query.date.trim() : "";
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : toDateOnly(new Date());
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : etTodayDateOnly();
   const direction = req.query.direction === "delivery" ? "delivery" as const : "pickup" as const;
+  const wave: RouteWave = req.query.wave === "afternoon" ? "afternoon" : "morning";
   const d = isoToDate(date);
   const dayName = WD_FULL[d.getDay()]!;
   const isOperating = ROUTE_DAYS.has(d.getDay());
   try {
-    const orders = !isOperating
+    const waveTowns = new Set(townsForWave(wave));
+    const otherWaveTowns = new Set(townsForWave(wave === "morning" ? "afternoon" : "morning"));
+    const allOrders = !isOperating
       ? []
       : direction === "delivery"
         ? await db.select().from(ordersTable).where(eq(ordersTable.status, "picked_up"))
         : await db.select().from(ordersTable)
             .where(and(eq(ordersTable.status, "pending"), eq(ordersTable.pickupDate, date)));
+    const orders = allOrders.filter((o) => waveTowns.has(o.town));
+    // Surface "orphan" orders — eligible by date/status but whose town isn't
+    // in ANY wave. Without this they silently disappear from both waves
+    // (e.g. legacy data after a Phase 1 → Phase 2 demotion, or a typo'd town).
+    const orphans = allOrders.filter(
+      (o) => !waveTowns.has(o.town) && !otherWaveTowns.has(o.town),
+    );
 
-    const route = await computeOptimizedRoute(orders, direction);
+    const route = await computeOptimizedRoute(orders, direction, {
+      townOrder: WAVE_ORDER[wave],
+    });
     if (!isOperating) {
       route.warnings.unshift(`No route on ${dayName} (${date}). The business runs Mon–Thu only.`);
+    }
+    if (orphans.length > 0) {
+      const orphanTowns = [...new Set(orphans.map((o) => o.town))].join(", ");
+      route.warnings.push(
+        `${orphans.length} order${orphans.length !== 1 ? "s" : ""} not in any wave (towns: ${orphanTowns}) — not shown on either route.`,
+      );
     }
 
     const stopsWithDetail = route.stops.map((s, idx) => {
@@ -68,6 +87,7 @@ router.get("/route/today", async (req, res) => {
       date,
       dayName,
       direction,
+      wave,
       isOperatingDay: isOperating,
       start: route.start,
       end: route.end,

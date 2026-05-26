@@ -2,5 +2,6 @@
 - [Composite lib rebuild](composite-lib-rebuild.md) — schema edits in lib/db require `typecheck:libs` before api-server typecheck sees the new exports.
 - [SMS↔dashboard parity hooks](sms-dashboard-parity.md) — any state-changing side effect must live in a shared lib and be called from BOTH the SMS admin path AND the dashboard PATCH path.
 - [Route direction geometry](route-direction-geometry.md) — pickup = home→cleaners; delivery = cleaners→home; addresses live only in lib/route-service.ts; delivery filter is status=picked_up with no date.
+- [Wave-split routes](wave-routes.md) — Phase 1 Mondays split into morning (10 AM cutoff) + afternoon (noon cutoff); every "today's pickups" surface must filter by wave too.
 - [Order number sequence](order-number-sequence.md) — `order_number_seq` must be declared as `pgSequence` in Drizzle schema, or push will silently drop it and crash the new-order wizard mid-flow.
 - [Town phase rollout](town-phases.md) — TOWN_SCHEDULE has `phase: 1|2`; customer picker shows Phase 1 numbered + Phase 2 as "coming soon" footer, admin/booking surfaces show Phase 1 only.

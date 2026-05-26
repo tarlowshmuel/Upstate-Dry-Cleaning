@@ -15,3 +15,4 @@ The route service supports two directions, controlled by a `direction: "pickup" 
 - Use `endpointsFor(direction)` to get `{startAddr, endAddr}`. `computeOptimizedRoute(orders, direction)` handles the rest.
 - Delivery filter is `status = 'picked_up'` with NO `pickupDate` filter — once an order is at the cleaners it stays "ready to deliver" regardless of the day it was collected. Pickup filter is `status='pending' AND pickupDate=date`.
 - All three surfaces (API `/api/route/today?direction=`, SMS option 6/12, dashboard RoutePanel toggle) must thread the same `direction` value end-to-end.
+- Same rule applies to the wave dimension — see `wave-routes.md`.

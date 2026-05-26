@@ -65,9 +65,20 @@ function buildMapsUrl(clusters: Cluster[], startAddr: string, endAddr: string): 
   return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${wpParam}&travelmode=driving`;
 }
 
+export interface ComputeRouteOptions {
+  /**
+   * Optional list of town names in driver-visit order. When provided, the
+   * final stops are sorted by town index in this array (with within-town
+   * ordering coming from the geographic optimizer). Towns not in the list
+   * sort to the end. Use this to enforce a wave's driving sequence.
+   */
+  townOrder?: string[];
+}
+
 export async function computeOptimizedRoute(
   orders: Order[],
   direction: RouteDirection = "pickup",
+  options: ComputeRouteOptions = {},
 ): Promise<OptimizedRoute> {
   const { startAddr, endAddr } = endpointsFor(direction);
   const warnings: string[] = [];
@@ -137,6 +148,25 @@ export async function computeOptimizedRoute(
     const idx = optimizeRoute(startGeo, geocoded.map((c) => c.point), end);
     ordered = idx.map((i) => geocoded[i]!);
     ordered.push(...ungeocoded);
+  }
+
+  // If caller supplied a driving order, re-sort the final stops to honor it.
+  // Towns not listed sort to the end. Within a town, the geographic
+  // optimizer's relative order is preserved (stable sort by .indexOf below).
+  if (options.townOrder && options.townOrder.length > 0) {
+    const order = options.townOrder;
+    const idxFor = (t: string): number => {
+      const i = order.indexOf(t);
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    ordered = ordered
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => {
+        const ai = idxFor(a.c.town);
+        const bi = idxFor(b.c.town);
+        return ai - bi || a.i - b.i;
+      })
+      .map((x) => x.c);
   }
 
   let totalKm = 0;

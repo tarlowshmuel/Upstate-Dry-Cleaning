@@ -37,6 +37,7 @@ interface RouteResponse {
   date: string;
   dayName?: string;
   direction?: "pickup" | "delivery";
+  wave?: "morning" | "afternoon";
   isOperatingDay?: boolean;
   start: { address: string; lat: number | null; lng: number | null };
   end: { address: string; lat: number | null; lng: number | null };
@@ -48,6 +49,12 @@ interface RouteResponse {
 }
 
 type Direction = "pickup" | "delivery";
+type Wave = "morning" | "afternoon";
+
+const WAVE_LABEL: Record<Wave, string> = {
+  morning: "Morning · bags out by 10 AM",
+  afternoon: "Afternoon · bags out by 12 PM",
+};
 
 // Mon–Thu only. Sun/Fri/Sat are non-operating days.
 const OPERATING_DAYS = new Set([1, 2, 3, 4]);
@@ -133,9 +140,9 @@ function buildDayOptions(): DayOption[] {
   return days;
 }
 
-async function fetchRoute(date: string, direction: Direction): Promise<RouteResponse> {
+async function fetchRoute(date: string, direction: Direction, wave: Wave): Promise<RouteResponse> {
   const res = await fetch(
-    `${API_BASE}/route/today?date=${encodeURIComponent(date)}&direction=${direction}`,
+    `${API_BASE}/route/today?date=${encodeURIComponent(date)}&direction=${direction}&wave=${wave}`,
     { credentials: "include" },
   );
   if (!res.ok) throw new Error("Failed to fetch route");
@@ -146,19 +153,21 @@ export function RoutePanel() {
   const dayOptions = useMemo(buildDayOptions, []);
   const [selectedDate, setSelectedDate] = useState<string>(dayOptions[0]!.date);
   const [direction, setDirection] = useState<Direction>("pickup");
+  const [wave, setWave] = useState<Wave>(() => (new Date().getHours() >= 11 ? "afternoon" : "morning"));
   const [collapsed, setCollapsed] = useState(false);
   const selectedOption = dayOptions.find((d) => d.date === selectedDate) ?? dayOptions[0]!;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["route", selectedDate, direction],
-    queryFn: () => fetchRoute(selectedDate, direction),
+    queryKey: ["route", selectedDate, direction, wave],
+    queryFn: () => fetchRoute(selectedDate, direction, wave),
     staleTime: 60_000,
   });
 
   const directionLabel = direction === "delivery" ? "Delivery Route" : "Pickup Route";
+  const waveTag = wave === "morning" ? "Morning" : "Afternoon";
   const headerTitle = selectedOption.isToday
-    ? `Today's ${directionLabel}`
-    : `${selectedOption.label}'s ${directionLabel}`;
+    ? `Today's ${waveTag} ${directionLabel}`
+    : `${selectedOption.label}'s ${waveTag} ${directionLabel}`;
 
   const directionToggle = (
     <div className="inline-flex rounded-md border border-border overflow-hidden text-xs font-medium">
@@ -177,6 +186,29 @@ export function RoutePanel() {
             )}
           >
             {d === "pickup" ? "Pickup (home → cleaners)" : "Delivery (cleaners → home)"}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const waveToggle = (
+    <div className="inline-flex rounded-md border border-border overflow-hidden text-xs font-medium">
+      {(["morning", "afternoon"] as const).map((w) => {
+        const active = wave === w;
+        return (
+          <button
+            key={w}
+            type="button"
+            onClick={() => setWave(w)}
+            className={cn(
+              "px-3 py-1.5 transition-colors",
+              active
+                ? "bg-primary text-primary-foreground"
+                : "bg-card hover:bg-muted text-foreground",
+            )}
+          >
+            {WAVE_LABEL[w]}
           </button>
         );
       })}
@@ -240,7 +272,10 @@ export function RoutePanel() {
             </Button>
           )}
         </div>
-        {directionToggle}
+        <div className="flex flex-wrap gap-2">
+          {directionToggle}
+          {waveToggle}
+        </div>
         {daySelector}
       </div>
     </CardHeader>
