@@ -57,3 +57,15 @@ export async function notifyCustomerStatusChange(
   if (!msg) return "";
   return notifyCustomer(order, msg);
 }
+
+// Cancellation / removal notification — fired when an order is hard-deleted
+// from either the SMS admin path or the dashboard. Same parity rule applies:
+// call from BOTH surfaces (see .agents/memory/sms-dashboard-parity.md).
+export async function notifyCustomerCancellation(order: OrderRow): Promise<string> {
+  const greeting = `Hi ${order.name.split(" ")[0] ?? order.name}!`;
+  const msg =
+    `${greeting} Your dry cleaning order ${order.orderNumber} has been cancelled. ` +
+    `If this is a mistake or you'd like to reschedule, just text us back. ` +
+    `— Upstate Dry Cleaning`;
+  return notifyCustomer(order, msg);
+}

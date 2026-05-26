@@ -4,7 +4,7 @@ import { db } from "@workspace/db";
 import { conversationsTable, ordersTable, referralsTable } from "@workspace/db/schema";
 import { eq, and, gte, desc, ilike, or, sql } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
-import { customerStatusMessage, notifyCustomer, notifyCustomerStatusChange } from "../lib/customer-notify";
+import { customerStatusMessage, notifyCustomer, notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
 
 const router = Router();
 
@@ -434,7 +434,7 @@ function adminUpdateMenu(order: OrderRow): string {
     `13. Notes`,
     ``,
     `── Danger ──`,
-    `14. Remove order (no SMS to customer)`,
+    `14. Cancel order (texts customer)`,
     ``,
     `0. Back to menu`,
     `(📩 = customer notified)`,
@@ -1113,7 +1113,7 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       await setAdminStep(from, "admin_delete_confirm", String(id));
       return (
         `⚠️ REMOVE order #${order.id} — ${order.orderNumber} (${order.name})?\n\n` +
-        `This permanently deletes the order. The customer will NOT be notified. ` +
+        `This permanently deletes the order and texts the customer that it was cancelled. ` +
         `This can't be undone.\n\n` +
         `Reply "YES" to confirm, or "0" to cancel.`
       );
@@ -1144,8 +1144,9 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
       return `That order no longer exists.\n\n${ADMIN_MAIN_MENU}`;
     }
     await db.delete(ordersTable).where(eq(ordersTable.id, id));
+    const notifySuffix = await notifyCustomerCancellation(order);
     await setAdminStep(from, "admin_main");
-    return `🗑️ Removed order #${order.id} — ${order.orderNumber} (${order.name}). Customer was NOT notified.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    return `🗑️ Removed order #${order.id} — ${order.orderNumber} (${order.name}).${notifySuffix}\n\n———\n\n${ADMIN_MAIN_MENU}`;
   }
 
   // ── Single-field edits ────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { ordersTable } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
-import { notifyCustomerStatusChange } from "../lib/customer-notify";
+import { notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -195,12 +195,17 @@ router.delete("/orders/:id", async (req, res) => {
   const [deleted] = await db
     .delete(ordersTable)
     .where(eq(ordersTable.id, id))
-    .returning({ id: ordersTable.id, orderNumber: ordersTable.orderNumber });
+    .returning();
   if (!deleted) {
     res.status(404).json({ error: "Order not found" });
     return;
   }
   req.log.info({ orderId: deleted.id, orderNumber: deleted.orderNumber }, "Order deleted");
+  // Parity with the SMS admin delete path: cancelled orders text the customer.
+  // Fire-and-forget so a Twilio hiccup doesn't fail the dashboard mutation.
+  notifyCustomerCancellation(deleted).catch((err) => {
+    req.log.warn({ err, orderId: deleted.id }, "Cancellation notify failed (dashboard path)");
+  });
   res.status(204).send();
 });
 
