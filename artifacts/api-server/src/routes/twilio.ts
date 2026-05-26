@@ -141,6 +141,21 @@ function twimlResponse(message: string): string {
   return twiml.toString();
 }
 
+// MMS variant: attaches a publicly-reachable image URL to the outgoing
+// message. Used for the brand-introduction welcome so the customer sees the
+// logo alongside the intro text. Falls back gracefully to text-only if the
+// carrier or device doesn't support MMS — the body still arrives.
+function twimlResponseWithMedia(message: string, mediaUrl: string): string {
+  const twiml = new twilio.twiml.MessagingResponse();
+  const msg = twiml.message(message);
+  msg.media(mediaUrl);
+  return twiml.toString();
+}
+
+// Logo is served by the dashboard's static /public at the published root,
+// so PUBLIC_URL + /logo.png is fetchable by Twilio in production.
+const LOGO_URL = `${PUBLIC_URL.replace(/\/$/, "")}/logo.png`;
+
 function todayStart(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -1674,10 +1689,11 @@ router.post("/webhook/twilio", verifyTwilioSignature, async (req, res) => {
           updatedAt: new Date(),
         },
       });
-    res.send(twimlResponse(
-      `Welcome to Dry Cleaning Service! 👔\n\n` +
+    res.send(twimlResponseWithMedia(
+      `Welcome to Upstate Dry Cleaning! 👔\n\n` +
       `${welcomeIntro()}\n\n` +
-      `What is your full name?`
+      `What is your full name?`,
+      LOGO_URL,
     ));
     return;
   }

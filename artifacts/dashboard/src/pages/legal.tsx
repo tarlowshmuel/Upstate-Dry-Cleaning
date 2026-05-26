@@ -10,11 +10,18 @@ export default function Legal() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-4 py-8">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Privacy Policy &amp; Terms of Service</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            {BUSINESS_NAME} &middot; Last updated {LAST_UPDATED}
-          </p>
+        <header className="mb-8 flex items-center gap-4">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt={BUSINESS_NAME}
+            className="h-20 w-20 rounded-full object-cover shadow-sm border border-border/40 shrink-0"
+          />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Privacy Policy &amp; Terms of Service</h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              {BUSINESS_NAME} &middot; Last updated {LAST_UPDATED}
+            </p>
+          </div>
         </header>
 
         {/* ─────────────── PRIVACY POLICY ─────────────── */}

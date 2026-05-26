@@ -232,13 +232,20 @@ export default function Dashboard() {
 
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground font-serif">
-              Operations
-            </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Dry cleaning pickup management
-            </p>
+          <div className="flex items-center gap-4">
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="Upstate Dry Cleaning"
+              className="h-16 w-16 rounded-full object-cover shadow-sm border border-border/40"
+            />
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground font-serif">
+                Upstate Dry Cleaning
+              </h1>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Operations &middot; Sullivan County, NY
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <NewOrderDialog />
