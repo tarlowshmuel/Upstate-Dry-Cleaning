@@ -13,11 +13,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Shirt, CalendarDays, CheckCircle2, Phone, MapPin, AlertCircle } from "lucide-react";
+import { Shirt, CalendarDays, CheckCircle2, Phone, MapPin, AlertCircle, Gift, Mail } from "lucide-react";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SMS_NUMBER = "(845) 606-0022";
 const SMS_HREF = "+18456060022";
+const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
 
 type PickupOption = {
   date: string;
@@ -203,6 +204,7 @@ export default function OrderPage() {
               </Link>
               .
             </p>
+            <ReferralCallout />
             <div className="flex gap-2">
               <Button
                 onClick={() => {
@@ -242,6 +244,19 @@ export default function OrderPage() {
               Couldn't load town list: {loadError}
             </div>
           )}
+          <div className="mb-5 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm flex items-start gap-2">
+            <Gift className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+            <div>
+              <span className="font-medium">Refer 3 neighbors, get a free pickup.</span>{" "}
+              <span className="text-muted-foreground">
+                When 3 friends complete their first paid pickup, your next order is on us (up to $30).{" "}
+                <Link href="/legal" className="underline">
+                  See terms
+                </Link>
+                .
+              </span>
+            </div>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Your name" required>
@@ -430,6 +445,21 @@ function Field({
   );
 }
 
+function ReferralCallout() {
+  return (
+    <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm flex items-start gap-2">
+      <Gift className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+      <div>
+        <span className="font-medium">Tell your neighbors!</span>{" "}
+        <span className="text-muted-foreground">
+          Refer 3 friends — when each completes their first paid pickup, your next order is free (up to $30).
+          Text <span className="font-mono">refer</span> to {SMS_NUMBER} to add one.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
@@ -446,7 +476,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
               Pickup &amp; delivery, Sullivan County
             </p>
           </div>
-          <div className="ml-auto hidden sm:block">
+          <div className="ml-auto hidden sm:flex flex-col items-end gap-0.5">
             <a
               href={`sms:${SMS_HREF}`}
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
@@ -454,17 +484,35 @@ function PageShell({ children }: { children: React.ReactNode }) {
               <Phone className="w-3.5 h-3.5" />
               {SMS_NUMBER}
             </a>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              {CONTACT_EMAIL}
+            </a>
           </div>
         </header>
         {children}
-        <footer className="mt-6 text-center text-xs text-muted-foreground">
-          <Link href="/my-orders" className="underline">
-            Check my orders
-          </Link>
-          <span className="mx-2">·</span>
-          <Link href="/legal" className="underline">
-            Terms &amp; privacy
-          </Link>
+        <footer className="mt-6 text-center text-xs text-muted-foreground space-y-1">
+          <div>
+            <Link href="/my-orders" className="underline">
+              Check my orders
+            </Link>
+            <span className="mx-2">·</span>
+            <Link href="/legal" className="underline">
+              Terms &amp; privacy
+            </Link>
+            <span className="mx-2">·</span>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
+              {CONTACT_EMAIL}
+            </a>
+          </div>
+          <div className="sm:hidden">
+            <a href={`sms:${SMS_HREF}`} className="underline">
+              Text {SMS_NUMBER}
+            </a>
+          </div>
         </footer>
       </div>
     </div>

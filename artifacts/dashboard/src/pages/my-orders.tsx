@@ -13,11 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Shirt, Phone, CalendarDays, AlertCircle, RefreshCw, MapPin } from "lucide-react";
+import { Shirt, Phone, CalendarDays, AlertCircle, RefreshCw, MapPin, Mail } from "lucide-react";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SMS_NUMBER = "(845) 606-0022";
 const SMS_HREF = "+18456060022";
+const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
 
 type OrderRow = {
   id: number;
@@ -374,7 +375,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
             <h1 className="text-2xl font-bold tracking-tight">{BUSINESS_NAME}</h1>
             <p className="text-xs text-muted-foreground mt-0.5">My orders</p>
           </div>
-          <div className="ml-auto hidden sm:block">
+          <div className="ml-auto hidden sm:flex flex-col items-end gap-0.5">
             <a
               href={`sms:${SMS_HREF}`}
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
@@ -382,17 +383,35 @@ function PageShell({ children }: { children: React.ReactNode }) {
               <Phone className="w-3.5 h-3.5" />
               {SMS_NUMBER}
             </a>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              {CONTACT_EMAIL}
+            </a>
           </div>
         </header>
         {children}
-        <footer className="mt-6 text-center text-xs text-muted-foreground">
-          <Link href="/order" className="underline">
-            Schedule a pickup
-          </Link>
-          <span className="mx-2">·</span>
-          <Link href="/legal" className="underline">
-            Terms &amp; privacy
-          </Link>
+        <footer className="mt-6 text-center text-xs text-muted-foreground space-y-1">
+          <div>
+            <Link href="/order" className="underline">
+              Schedule a pickup
+            </Link>
+            <span className="mx-2">·</span>
+            <Link href="/legal" className="underline">
+              Terms &amp; privacy
+            </Link>
+            <span className="mx-2">·</span>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
+              {CONTACT_EMAIL}
+            </a>
+          </div>
+          <div className="sm:hidden">
+            <a href={`sms:${SMS_HREF}`} className="underline">
+              Text {SMS_NUMBER}
+            </a>
+          </div>
         </footer>
       </div>
     </div>

@@ -4,7 +4,10 @@ const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SERVICE_AREA = "Sullivan County, NY";
 const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
 const CONTACT_PHONE = "(845) 606-0022";
-const LAST_UPDATED = "May 25, 2026";
+const LAST_UPDATED = "May 26, 2026";
+const REFERRAL_THRESHOLD = 3;
+const REFERRAL_CREDIT_USD = 30;
+const REFERRAL_MAX_REDEMPTIONS = 2;
 
 export default function Legal() {
   return (
@@ -257,7 +260,54 @@ export default function Legal() {
             </section>
 
             <section>
-              <h2 className="font-semibold text-base mb-2">5. Cancellation &amp; missed pickups</h2>
+              <h2 className="font-semibold text-base mb-2">5. Referral program</h2>
+              <p>
+                Refer your neighbors and earn free pickups. The program works as
+                follows:
+              </p>
+              <ul className="list-disc pl-5 space-y-1 mt-2">
+                <li>
+                  For every {REFERRAL_THRESHOLD} neighbors you refer who complete
+                  their first paid pickup with {BUSINESS_NAME}, you earn one
+                  free pickup credit worth up to{" "}
+                  <span className="font-medium">${REFERRAL_CREDIT_USD}</span>.
+                </li>
+                <li>
+                  If your next order is more than ${REFERRAL_CREDIT_USD}, the
+                  credit applies as a ${REFERRAL_CREDIT_USD} discount and you
+                  pay the remainder.
+                </li>
+                <li>
+                  A referral only qualifies when the referred customer is brand
+                  new to {BUSINESS_NAME} and pays for their first pickup. Repeat
+                  customers, duplicates, or self-referrals do not count.
+                </li>
+                <li>
+                  Each phone number can be referred only once, by one referrer.
+                </li>
+                <li>
+                  Lifetime cap of {REFERRAL_MAX_REDEMPTIONS} free pickup credits
+                  per household ({REFERRAL_THRESHOLD * REFERRAL_MAX_REDEMPTIONS}{" "}
+                  qualified referrals total).
+                </li>
+                <li>
+                  Credits are non-transferable, have no cash value, and cannot
+                  be combined with other discounts.
+                </li>
+                <li>
+                  {BUSINESS_NAME} may modify, suspend, or end the referral
+                  program at any time. Credits already earned will still be
+                  honored.
+                </li>
+              </ul>
+              <p className="mt-2">
+                To add a referral, text "refer" to {CONTACT_PHONE} or ask us on
+                your next pickup.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-base mb-2">6. Cancellation &amp; missed pickups</h2>
               <p>
                 You may cancel a scheduled pickup by replying to our confirmation
                 message before the pickup window. If we attempt a pickup and the bag
@@ -267,7 +317,7 @@ export default function Legal() {
             </section>
 
             <section>
-              <h2 className="font-semibold text-base mb-2">6. Acceptable use</h2>
+              <h2 className="font-semibold text-base mb-2">7. Acceptable use</h2>
               <p>
                 You agree not to use the service to submit fraudulent orders, harass
                 staff, or send abusive messages. We reserve the right to refuse
@@ -276,7 +326,7 @@ export default function Legal() {
             </section>
 
             <section>
-              <h2 className="font-semibold text-base mb-2">7. Changes to these terms</h2>
+              <h2 className="font-semibold text-base mb-2">8. Changes to these terms</h2>
               <p>
                 {BUSINESS_NAME} may change, update, or replace these terms — and the
                 Privacy Policy above — at any time, at our sole discretion, with or
@@ -289,7 +339,7 @@ export default function Legal() {
             </section>
 
             <section>
-              <h2 className="font-semibold text-base mb-2">8. Contact</h2>
+              <h2 className="font-semibold text-base mb-2">9. Contact</h2>
               <p>
                 Questions about these terms? Email {CONTACT_EMAIL} or text/call {CONTACT_PHONE}.
               </p>
