@@ -1,4 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link } from "wouter";
+import { ArrowLeft } from "lucide-react";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SERVICE_AREA = "Sullivan County, NY";
@@ -24,6 +26,13 @@ export default function Legal() {
             <p className="text-sm text-muted-foreground mt-2">
               {BUSINESS_NAME} &middot; Last updated {LAST_UPDATED}
             </p>
+            <Link
+              href="/order"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-2"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to home
+            </Link>
           </div>
         </header>
 

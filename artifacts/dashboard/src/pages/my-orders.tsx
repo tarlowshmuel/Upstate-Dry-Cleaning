@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Shirt, Phone, CalendarDays, AlertCircle, RefreshCw, MapPin, Mail } from "lucide-react";
+import { Shirt, Phone, CalendarDays, AlertCircle, RefreshCw, MapPin, Mail, ArrowLeft } from "lucide-react";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SMS_NUMBER = "(845) 606-0022";
@@ -374,6 +374,13 @@ function PageShell({ children }: { children: React.ReactNode }) {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{BUSINESS_NAME}</h1>
             <p className="text-xs text-muted-foreground mt-0.5">My orders</p>
+            <Link
+              href="/order"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to home
+            </Link>
           </div>
           <div className="ml-auto hidden sm:flex flex-col items-end gap-0.5">
             <a
