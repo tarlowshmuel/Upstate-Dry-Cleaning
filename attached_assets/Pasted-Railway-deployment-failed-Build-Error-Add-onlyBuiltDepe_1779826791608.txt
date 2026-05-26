@@ -1,0 +1,51 @@
+Railway deployment failed — Build Error
+
+Add `onlyBuiltDependencies=*` to your `.npmrc` file to allow esbuild's postinstall script to run. The build fails because pnpm 11.3.0 blocks dependency lifecycle scripts by default, and esbuild requires its postinstall script to download its platform-specific binary. This same error persists on the latest commit, so a code fix is needed.
+
+Repository: https://github.com/tarlowshmuel/Upstate-Dry-Cleaning
+Branch: main · Commit: 7f17ab3 — Remove preinstall script from package.json to fix build
+
+Remove the preinstall script from package.json to resolve build issues caused by npm user agent checks in certain environments.
+
+Replit-Commit-Author: Agent
+Replit-Commit-Session-Id: 3dd0ee0c-8ebc-41db-b7ab-fb6467286e91
+Replit-Commit-Checkpoint-Type: full_checkpoint
+Replit-Commit-Event-Id: 3e1c06be-c09a-47ba-9615-108efb40620f
+Replit-Commit-Screenshot-Url: https://storage.googleapis.com/screenshot-production-us-central1/14e136e6-1ce5-4189-8bc6-b71427c3eb53/3dd0ee0c-8ebc-41db-b7ab-fb6467286e91/M52ecTg
+Replit-Helium-Checkpoint-Created: true
+Deployment ID: 7a954538-59a0-4694-8765-0507862e857f
+Service ID: 29e61b61-90e1-44b3-a68c-41103c2349a7
+Environment ID: ee89314e-2890-43e7-ab83-cdfb66dc24f7
+
+---
+
+## Problem
+The Dockerfile build fails at step `[builder 10/13] RUN pnpm install --frozen-lockfile --filter @workspace/api-server... --filter @workspace/db... --filter @workspace/api-zod...` with exit code 1. The build log shows:
+```
+[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: esbuild@0.27.3
+Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.
+```
+The SNAPSHOT_CODE stage succeeds, but BUILD_IMAGE fails. All 168 packages download successfully, but pnpm then exits with code 1 because esbuild's postinstall script is blocked. This same error occurs on the latest HEAD commit (deployment f0835c75).
+
+## Diagnosis
+Starting with pnpm v9.12, dependency lifecycle scripts (postinstall, preinstall, etc.) are blocked by default for security. The project uses `pnpm@11.3.0` (declared in the `packageManager` field of `package.json`), which enforces this policy. esbuild relies on a postinstall script to download its platform-specific native binary — without it, the install step fails. The `.npmrc` file currently contains:
+```
+auto-install-peers=false
+strict-peer-dependencies=false
+```
+It does not include any configuration to allow dependency build scripts. There is also no `.pnpm-approve-builds` file or `pnpm.onlyBuiltDependencies` field in `package.json`.
+
+## Fix
+1. **File:** `.npmrc` (repo root)
+2. **Current content:**
+```
+auto-install-peers=false
+strict-peer-dependencies=false
+```
+3. **Replacement content:**
+```
+auto-install-peers=false
+strict-peer-dependencies=false
+onlyBuiltDependencies=*
+```
+4. **Why:** Adding `onlyBuiltDependencies=*` tells pnpm to allow all dependency build scripts to run, which permits esbuild's postinstall script to execute and download its platform-specific binary. This is the simplest fix and does not require regenerating the lockfile.
