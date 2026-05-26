@@ -644,6 +644,80 @@ export const useBulkMarkOrdersAtCleaners = <TError = ErrorType<unknown>,
       return useMutation(getBulkMarkOrdersAtCleanersMutationOptions(options));
     }
 
+export const getBulkMarkOrdersDeliveredUrl = () => {
+
+
+
+
+  return `/api/orders/bulk-mark-delivered`
+}
+
+/**
+ * Atomically transitions every order currently in `ready` to `delivered`.
+Orders not in `ready` are ignored. Fires per-order customer notifications.
+Hit this after the drop-off route is complete.
+
+ * @summary Mark every ready order as delivered in one transaction
+ */
+export const bulkMarkOrdersDelivered = async ( options?: RequestInit): Promise<BulkStatusUpdateResult> => {
+
+  return customFetch<BulkStatusUpdateResult>(getBulkMarkOrdersDeliveredUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getBulkMarkOrdersDeliveredMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkMarkOrdersDelivered>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkMarkOrdersDelivered>>, TError,void, TContext> => {
+
+const mutationKey = ['bulkMarkOrdersDelivered'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkMarkOrdersDelivered>>, void> = () => {
+
+
+          return  bulkMarkOrdersDelivered(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkMarkOrdersDeliveredMutationResult = NonNullable<Awaited<ReturnType<typeof bulkMarkOrdersDelivered>>>
+
+    export type BulkMarkOrdersDeliveredMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark every ready order as delivered in one transaction
+ */
+export const useBulkMarkOrdersDelivered = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkMarkOrdersDelivered>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkMarkOrdersDelivered>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getBulkMarkOrdersDeliveredMutationOptions(options));
+    }
+
 export const getBulkMarkOrdersReadyUrl = () => {
 
 

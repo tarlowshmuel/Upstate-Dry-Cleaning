@@ -221,6 +221,46 @@ export const BulkMarkOrdersAtCleanersResponse = zod.object({
 
 
 /**
+ * Atomically transitions every order currently in `ready` to `delivered`.
+Orders not in `ready` are ignored. Fires per-order customer notifications.
+Hit this after the drop-off route is complete.
+
+ * @summary Mark every ready order as delivered in one transaction
+ */
+export const BulkMarkOrdersDeliveredResponse = zod.object({
+  "updated": zod.number().describe('Count of orders whose status was changed'),
+  "orders": zod.array(zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "phoneNumber": zod.string(),
+  "name": zod.string(),
+  "town": zod.string(),
+  "colony": zod.string(),
+  "colonyAddress": zod.string().nullish(),
+  "unitNumber": zod.string(),
+  "gateAccess": zod.string().nullish(),
+  "items": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "cleanerTickets": zod.string().nullish(),
+  "pickupDate": zod.coerce.date().nullish(),
+  "status": zod.string(),
+  "paid": zod.boolean(),
+  "pricedAt": zod.coerce.date().nullish(),
+  "feeCentsSnapshot": zod.number().nullish(),
+  "totalOverrideCents": zod.number().nullish(),
+  "totalWasOverridden": zod.boolean(),
+  "receiptSentAt": zod.coerce.date().nullish(),
+  "paidAt": zod.coerce.date().nullish(),
+  "paidMethod": zod.string().nullish(),
+  "paidConfirmationSentAt": zod.coerce.date().nullish(),
+  "itemsSubtotalCents": zod.number().nullish().describe('Sum of line items (quantity × unit price). Null if not yet priced.'),
+  "grandTotalCents": zod.number().nullish().describe('itemsSubtotalCents + feeCentsSnapshot, or totalOverrideCents when set. Null if not yet priced.'),
+  "createdAt": zod.coerce.date()
+})).describe('The orders that were updated')
+})
+
+
+/**
  * Atomically transitions every order currently in `at_cleaners` to
 `ready`. Orders not in `at_cleaners` are ignored (no rewind risk).
 Fires the same customer notification side effect as the per-order

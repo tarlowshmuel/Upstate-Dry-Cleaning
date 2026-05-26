@@ -5,6 +5,7 @@ import {
   useUpdateOrderPaid,
   useBulkMarkOrdersReady,
   useBulkMarkOrdersAtCleaners,
+  useBulkMarkOrdersDelivered,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -41,7 +42,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2, Sparkles, Receipt as ReceiptIcon, Printer } from "lucide-react";
+import { Shirt, Phone, MapPin, Clock, Key, Inbox, Hash, Package, DollarSign, CircleDashed, CheckCircle2, Sparkles, Receipt as ReceiptIcon, Printer, ChevronDown, Truck, Building2, PackageCheck } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { RoutePanel } from "@/components/route-panel";
 import { NewOrderDialog } from "@/components/new-order-dialog";
@@ -282,138 +291,170 @@ function StatusSelect({
 // conditional UPDATE so stale client snapshots can't accidentally rewind orders
 // that have since moved on. Each updated order still triggers the same per-order
 // customer notification (SMS↔dashboard parity preserved).
-// One-tap: every order currently picked_up (in the van) → at_cleaners. Driver
-// hits this when they walk through the cleaners' door and dump the load.
-// Same server-side conditional UPDATE pattern as BulkMarkReadyButton.
-function BulkMarkAtCleanersButton({ count }: { count: number }) {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const { mutate, isPending } = useBulkMarkOrdersAtCleaners({
-    mutation: {
-      onSuccess: ({ updated }) => {
-        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-        queryClient.invalidateQueries({ queryKey: ["route"] });
-        setOpen(false);
-        if (updated === 0) {
-          toast.info("No picked-up orders to drop off");
-        } else {
-          toast.success(
-            updated === 1
-              ? "1 order marked at cleaners"
-              : `${updated} orders marked at cleaners`,
-          );
-        }
-      },
-      onError: () => {
-        toast.error("Could not update orders — please try again");
-      },
-    },
-  });
+// Single dropdown surface for all bulk status transitions. Each item delegates
+// to a server-side conditional UPDATE so stale client snapshots can't rewind
+// orders that have since moved on (see .agents/memory/bulk-status-transitions.md).
+// Per-order customer notifications fire for every updated row, preserving
+// SMS↔dashboard parity. Items that have nothing to act on are disabled rather
+// than hidden — keeps menu position stable so the driver builds muscle memory.
+type BulkAction = {
+  key: "drop-off" | "ready" | "delivered";
+  label: string;
+  detail: string;
+  icon: typeof Truck;
+  fromStatus: "picked_up" | "at_cleaners" | "ready";
+  toLabel: string;
+};
 
-  if (count === 0) return null;
+const BULK_ACTIONS: BulkAction[] = [
+  {
+    key: "drop-off",
+    label: "Drop off all at cleaners",
+    detail: "Picked Up → At Cleaners",
+    icon: Building2,
+    fromStatus: "picked_up",
+    toLabel: "at cleaners",
+  },
+  {
+    key: "ready",
+    label: "Mark all ready",
+    detail: "At Cleaners → Ready",
+    icon: PackageCheck,
+    fromStatus: "at_cleaners",
+    toLabel: "ready",
+  },
+  {
+    key: "delivered",
+    label: "Mark all delivered",
+    detail: "Ready → Delivered",
+    icon: Truck,
+    fromStatus: "ready",
+    toLabel: "delivered",
+  },
+];
+
+function BulkActionsMenu({ counts }: { counts: Record<BulkAction["fromStatus"], number> }) {
+  const queryClient = useQueryClient();
+  const [pending, setPending] = useState<BulkAction | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleSuccess = (action: BulkAction, updated: number) => {
+    queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["route"] });
+    setPending(null);
+    if (updated === 0) {
+      toast.info(`Nothing to mark ${action.toLabel}`);
+    } else {
+      toast.success(
+        `${updated} order${updated === 1 ? "" : "s"} marked ${action.toLabel}`,
+      );
+    }
+  };
+  const handleError = () => toast.error("Could not update orders — please try again");
+
+  const dropOff = useBulkMarkOrdersAtCleaners({
+    mutation: { onSuccess: ({ updated }) => handleSuccess(BULK_ACTIONS[0]!, updated), onError: handleError },
+  });
+  const ready = useBulkMarkOrdersReady({
+    mutation: { onSuccess: ({ updated }) => handleSuccess(BULK_ACTIONS[1]!, updated), onError: handleError },
+  });
+  const delivered = useBulkMarkOrdersDelivered({
+    mutation: { onSuccess: ({ updated }) => handleSuccess(BULK_ACTIONS[2]!, updated), onError: handleError },
+  });
+  const mutationByKey = { "drop-off": dropOff, ready, delivered } as const;
+
+  const isPending = dropOff.isPending || ready.isPending || delivered.isPending;
+  const totalActionable = counts.picked_up + counts.at_cleaners + counts.ready;
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-8 gap-1.5 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-200"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          Drop off all {count} at cleaners
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Drop off all {count} orders at the cleaners?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Every order currently <span className="font-semibold">Picked Up</span>{" "}
-            will be moved to <span className="font-semibold">At Cleaners</span>.
-            Orders in any other status will not be touched. Use this when you
-            walk in and hand the whole load over the counter.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
+    <>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 gap-1.5 bg-violet-100 hover:bg-violet-200 text-violet-900 border border-violet-200"
             disabled={isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              mutate();
-            }}
           >
-            {isPending ? "Updating…" : `Drop off ${count}`}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
+            <Sparkles className="w-3.5 h-3.5" />
+            Mark all…
+            {totalActionable > 0 ? (
+              <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px] bg-violet-200 text-violet-900">
+                {totalActionable}
+              </Badge>
+            ) : null}
+            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            Bulk status updates
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {BULK_ACTIONS.map((action) => {
+            const count = counts[action.fromStatus];
+            const Icon = action.icon;
+            return (
+              <DropdownMenuItem
+                key={action.key}
+                disabled={count === 0 || isPending}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setMenuOpen(false);
+                  setPending(action);
+                }}
+                className="flex flex-col items-start gap-0.5 py-2"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <Icon className="w-4 h-4 text-violet-700 shrink-0" />
+                  <span className="font-medium flex-1">{action.label}</span>
+                  <Badge
+                    variant="secondary"
+                    className={`h-5 px-1.5 text-[10px] ${count === 0 ? "opacity-40" : "bg-violet-100 text-violet-900"}`}
+                  >
+                    {count}
+                  </Badge>
+                </div>
+                <span className="text-[11px] text-muted-foreground pl-6">{action.detail}</span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-function BulkMarkReadyButton({ count }: { count: number }) {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const { mutate, isPending } = useBulkMarkOrdersReady({
-    mutation: {
-      onSuccess: ({ updated }) => {
-        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-        queryClient.invalidateQueries({ queryKey: ["route"] });
-        setOpen(false);
-        if (updated === 0) {
-          toast.info("No orders were at the cleaners to update");
-        } else {
-          toast.success(
-            updated === 1
-              ? "1 order marked ready for delivery"
-              : `${updated} orders marked ready for delivery`,
-          );
-        }
-      },
-      onError: () => {
-        toast.error("Could not update orders — please try again");
-      },
-    },
-  });
-
-  if (count === 0) return null;
-
-  return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-8 gap-1.5 bg-violet-100 hover:bg-violet-200 text-violet-900 border border-violet-200"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          Mark all {count} ready
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Mark all {count} orders ready?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Every order currently <span className="font-semibold">At Cleaners</span>{" "}
-            will be moved to <span className="font-semibold">Ready</span>. Orders
-            already delivered or in any other status will not be touched. Use
-            this after loading everything back into the van.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              mutate();
-            }}
-          >
-            {isPending ? "Updating…" : `Yes, mark ready`}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <AlertDialog open={pending != null} onOpenChange={(o) => !o && setPending(null)}>
+        <AlertDialogContent>
+          {pending ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {pending.label} — {counts[pending.fromStatus]} order
+                  {counts[pending.fromStatus] === 1 ? "" : "s"}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Every order currently <span className="font-semibold">{pending.detail.split(" → ")[0]}</span>{" "}
+                  will be moved to{" "}
+                  <span className="font-semibold">{pending.detail.split(" → ")[1]}</span>.
+                  Orders in any other status will not be touched.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={isPending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    mutationByKey[pending.key].mutate();
+                  }}
+                >
+                  {isPending ? "Updating…" : `Mark ${counts[pending.fromStatus]} ${pending.toLabel}`}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : null}
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -433,8 +474,11 @@ export default function Dashboard() {
 
   const today = todayDateString();
   const todaysPickups = orders?.filter((o) => o.status === "pending" && o.pickupDate === today) ?? [];
-  const atCleanersCount = (orders ?? []).filter((o) => o.status === "at_cleaners").length;
-  const pickedUpCount = (orders ?? []).filter((o) => o.status === "picked_up").length;
+  const bulkCounts = {
+    picked_up: (orders ?? []).filter((o) => o.status === "picked_up").length,
+    at_cleaners: (orders ?? []).filter((o) => o.status === "at_cleaners").length,
+    ready: (orders ?? []).filter((o) => o.status === "ready").length,
+  };
 
   const filteredOrders = (orders ?? [])
     .filter((o) => {
@@ -630,8 +674,7 @@ export default function Dashboard() {
                     Reset filters
                   </Button>
                 ) : null}
-                <BulkMarkAtCleanersButton count={pickedUpCount} />
-                <BulkMarkReadyButton count={atCleanersCount} />
+                <BulkActionsMenu counts={bulkCounts} />
               </div>
             </div>
           </CardHeader>

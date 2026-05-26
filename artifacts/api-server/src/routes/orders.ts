@@ -249,6 +249,28 @@ router.post("/orders/bulk-mark-at-cleaners", async (req, res) => {
   res.json({ updated: updated.length, orders: updated });
 });
 
+// One-tap: every "ready" order → "delivered". Driver hits this after the
+// drop-off route is complete. Same conditional UPDATE pattern as siblings.
+router.post("/orders/bulk-mark-delivered", async (req, res) => {
+  const updated = await db
+    .update(ordersTable)
+    .set({ status: "delivered" })
+    .where(eq(ordersTable.status, "ready"))
+    .returning();
+
+  for (const order of updated) {
+    notifyCustomerStatusChange(order, "delivered").catch((err) => {
+      req.log.warn(
+        { err, orderId: order.id, status: "delivered" },
+        "Customer notify failed (bulk-mark-delivered path)",
+      );
+    });
+  }
+
+  req.log.info({ count: updated.length }, "Bulk-marked orders delivered");
+  res.json({ updated: updated.length, orders: updated });
+});
+
 router.post("/orders/bulk-mark-ready", async (req, res) => {
   const updated = await db
     .update(ordersTable)

@@ -159,6 +159,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkStatusUpdateResult"
+  /orders/bulk-mark-delivered:
+    post:
+      operationId: bulkMarkOrdersDelivered
+      tags: [orders]
+      summary: Mark every ready order as delivered in one transaction
+      description: |
+        Atomically transitions every order currently in `ready` to `delivered`.
+        Orders not in `ready` are ignored. Fires per-order customer notifications.
+        Hit this after the drop-off route is complete.
+      responses:
+        "200":
+          description: Summary of what changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkStatusUpdateResult"
   /orders/bulk-mark-ready:
     post:
       operationId: bulkMarkOrdersReady
