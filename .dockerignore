@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.gitignore
+.replit
+.replit-artifact
+.local
+.agents
+artifacts/dashboard
+artifacts/mockup-sandbox
+attached_assets
+*.log
+.env
+.env.*
+!.env.example

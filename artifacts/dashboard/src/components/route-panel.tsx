@@ -8,7 +8,7 @@ import { Navigation, MapPin, Phone, Key, Package, AlertTriangle, Route as RouteI
 import { cn } from "@/lib/utils";
 import { RouteMap } from "./route-map";
 
-const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
+import { API_BASE } from "@/lib/api";
 
 interface StopOrder {
   id: number;

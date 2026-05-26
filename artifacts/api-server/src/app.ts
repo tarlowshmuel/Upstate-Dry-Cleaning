@@ -26,7 +26,20 @@ app.use(
     },
   }),
 );
-app.use(cors({ origin: true, credentials: true }));
+// CORS allowlist. In dev (and on Replit's same-origin proxy) leave
+// `CORS_ORIGIN` unset and we reflect any origin. In production split-host
+// deploys, set `CORS_ORIGIN` to the frontend URL (or a comma-separated list)
+// so the browser only accepts your own dashboard.
+const corsOrigins = (process.env.CORS_ORIGIN ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    credentials: true,
+  }),
+);
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

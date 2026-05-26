@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Shirt, Phone, CalendarDays, AlertCircle, RefreshCw, MapPin, Mail, ArrowLeft } from "lucide-react";
+import { apiUrl } from "@/lib/api";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SMS_NUMBER = "(845) 606-0022";
@@ -65,7 +66,7 @@ export default function MyOrdersPage() {
     setError(null);
     try {
       const res = await fetch(
-        `${import.meta.env.BASE_URL}api/customer/orders?phone=${encodeURIComponent(phone)}`,
+        apiUrl(`/customer/orders?phone=${encodeURIComponent(phone)}`),
       );
       const j = await res.json();
       if (!res.ok) {
@@ -254,7 +255,7 @@ function RescheduleDialog({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${import.meta.env.BASE_URL}api/customer/towns`)
+    fetch(apiUrl("/customer/towns"))
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
@@ -277,7 +278,7 @@ function RescheduleDialog({
     setErr(null);
     try {
       const res = await fetch(
-        `${import.meta.env.BASE_URL}api/customer/orders/${order.id}/reschedule`,
+        apiUrl(`/customer/orders/${order.id}/reschedule`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

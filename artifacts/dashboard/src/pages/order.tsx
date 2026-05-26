@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { apiUrl } from "@/lib/api";
 import { Shirt, CalendarDays, CheckCircle2, Phone, MapPin, AlertCircle, Gift, Mail, Plus, Minus } from "lucide-react";
 
 const BUSINESS_NAME = "Upstate Dry Cleaning";
@@ -83,7 +84,7 @@ export default function OrderPage() {
     let cancelled = false;
     // Independent loads — towns is required to book; menu is optional. If the
     // menu fetch fails we still want the customer to be able to schedule.
-    fetch(`${import.meta.env.BASE_URL}api/customer/towns`)
+    fetch(apiUrl("/customer/towns"))
       .then((r) => r.json())
       .then((j: TownsResponse) => {
         if (!cancelled) setData(j);
@@ -91,7 +92,7 @@ export default function OrderPage() {
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
       });
-    fetch(`${import.meta.env.BASE_URL}api/customer/price-list`)
+    fetch(apiUrl("/customer/price-list"))
       .then((r) => r.json())
       .then((j: { items: MenuItem[] }) => {
         if (!cancelled) setMenu(j.items ?? []);
@@ -155,7 +156,7 @@ export default function OrderPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/customer/orders`, {
+      const res = await fetch(apiUrl("/customer/orders"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
