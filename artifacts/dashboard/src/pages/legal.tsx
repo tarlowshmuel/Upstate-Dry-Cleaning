@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const BUSINESS_NAME = "Dry Cleaning Service";
+const BUSINESS_NAME = "Upstate Dry Cleaning";
 const SERVICE_AREA = "Sullivan County, NY";
 const CONTACT_EMAIL = "upstatedrycleaning@gmail.com";
 const CONTACT_PHONE = "(845) 606-0022";

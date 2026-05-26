@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Legal from "@/pages/legal";
+import Sms from "@/pages/sms";
 
 const queryClient = new QueryClient();
 
@@ -14,6 +15,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/sms" component={Sms} />
+      <Route path="/sms-terms" component={Sms} />
+      <Route path="/opt-in" component={Sms} />
       <Route path="/legal" component={Legal} />
       <Route path="/privacy" component={Legal} />
       <Route path="/terms" component={Legal} />
