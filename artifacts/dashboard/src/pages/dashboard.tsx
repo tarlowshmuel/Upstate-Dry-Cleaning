@@ -23,6 +23,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -148,9 +149,12 @@ function StatusSelect({
     <Select
       value={current}
       disabled={isPending}
-      onValueChange={(status) =>
-        mutate({ id: orderId, data: { status } })
-      }
+      onValueChange={(value) => {
+        // "__done__" is a UI-only shortcut — fast-forward any order straight
+        // to the terminal delivered state regardless of the current stage.
+        const status = value === "__done__" ? "delivered" : value;
+        mutate({ id: orderId, data: { status } });
+      }}
     >
       <SelectTrigger className="h-8 w-[130px] text-xs border-border/60 bg-background">
         <SelectValue />
@@ -161,6 +165,13 @@ function StatusSelect({
             {s.label}
           </SelectItem>
         ))}
+        <SelectSeparator />
+        <SelectItem
+          value="__done__"
+          className="text-xs font-semibold text-emerald-700 focus:text-emerald-800 focus:bg-emerald-50"
+        >
+          ✓ Done (mark delivered)
+        </SelectItem>
       </SelectContent>
     </Select>
   );
