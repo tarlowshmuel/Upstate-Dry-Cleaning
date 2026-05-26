@@ -2,9 +2,10 @@ import { Router, type RequestHandler } from "express";
 import twilio from "twilio";
 import { db } from "@workspace/db";
 import { conversationsTable, ordersTable, referralsTable } from "@workspace/db/schema";
-import { eq, and, gte, desc, asc, ilike, or, sql } from "drizzle-orm";
+import { eq, and, gte, desc, asc, ilike, or, sql, inArray } from "drizzle-orm";
 import { nextOrderNumber } from "../lib/order-number";
 import { customerStatusMessage, notifyAdmin, notifyCustomer, notifyCustomerCancellation, notifyCustomerStatusChange } from "../lib/customer-notify";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -860,6 +861,158 @@ function buildWavePickerMenu(dir: RouteDir, date: string): string {
     ``,
     `0. Back to menu`,
   ].join("\n");
+}
+
+// ─── Route walk-through (per-stop stepper) ────────────────────────────────────
+// State stashed in conversationsTable.items as JSON. Per-stop view re-fetches
+// the orders by ID so notes/items/status reflect any concurrent changes (e.g.
+// dashboard updates while the driver is on the road). Status transitions use
+// conditional UPDATE WHERE status='X' (parity rule, see
+// .agents/memory/bulk-status-transitions.md) so a stop that moved on between
+// fetch and confirm is never rewound.
+interface RouteWalkStop {
+  colony: string;
+  town: string;
+  addr: string | null;
+  ids: number[];
+}
+interface RouteWalkState {
+  dir: RouteDir;
+  date: string;
+  wave: RouteWave;
+  stops: RouteWalkStop[];
+  idx: number; // -1 = overview, 0..n-1 = at stop
+}
+
+function readWalk(s: string | null): RouteWalkState | null {
+  if (!s) return null;
+  try {
+    const o = JSON.parse(s) as RouteWalkState;
+    if (!o || !Array.isArray(o.stops) || typeof o.idx !== "number") return null;
+    return o;
+  } catch {
+    return null;
+  }
+}
+function writeWalk(o: RouteWalkState): string { return JSON.stringify(o); }
+
+function walkOverviewMessage(state: RouteWalkState): string {
+  const d = isoToDate(state.date);
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dateLabel = `${wd[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
+  const head = state.dir === "delivery" ? "🚚 DELIVERY WALK" : "🚚 PICKUP WALK";
+  const waveTag = state.wave === "morning" ? "MORNING" : "AFTERNOON";
+  const lines: string[] = [
+    `${head} — ${waveTag} — ${dateLabel} — ${state.stops.length} stop${state.stops.length !== 1 ? "s" : ""}`,
+    ``,
+  ];
+  state.stops.forEach((s, i) => {
+    lines.push(`${i + 1}. ${s.colony}${s.addr ? ` (${s.addr})` : ""}, ${s.town} · ${s.ids.length} order${s.ids.length !== 1 ? "s" : ""}`);
+  });
+  lines.push(
+    ``,
+    `Reply "go" to start at stop 1, a number to jump to a stop, or "0" to exit.`,
+  );
+  return lines.join("\n");
+}
+
+async function walkStopMessage(state: RouteWalkState): Promise<string> {
+  const stop = state.stops[state.idx];
+  if (!stop) return walkOverviewMessage(state);
+  const orders = await db.select().from(ordersTable).where(inArray(ordersTable.id, stop.ids));
+  // Preserve the order the optimizer chose
+  orders.sort((a, b) => stop.ids.indexOf(a.id) - stop.ids.indexOf(b.id));
+
+  const head = state.dir === "delivery" ? "🏠 DELIVER" : "📦 PICKUP";
+  const lines: string[] = [
+    `${head} stop ${state.idx + 1}/${state.stops.length}`,
+    `📍 ${stop.colony}${stop.addr ? ` (${stop.addr})` : ""}, ${stop.town}`,
+    ``,
+  ];
+  orders.forEach((o, i) => {
+    const gate = o.gateAccess ? ` · Gate ${o.gateAccess}` : "";
+    const items = o.items ? `\n   📦 ${o.items}` : "";
+    const notes = o.notes ? `\n   📝 ${o.notes}` : "";
+    const statusTag = ` [${o.status}]`;
+    lines.push(`${i + 1}. ${o.name} · Unit ${o.unitNumber}${gate}${statusTag}`);
+    lines.push(`   📞 ${o.phoneNumber}${items}${notes}`);
+  });
+
+  lines.push(``);
+  if (state.dir === "delivery") {
+    lines.push(
+      `1. Mark all DELIVERED (notify customers)`,
+      `n. Next stop   p. Prev stop`,
+      `r. Recap (overview)   0. Exit`,
+    );
+  } else {
+    lines.push(
+      `1. Mark all PICKED UP (notify customers)`,
+      `2. Mark all MISSED (notify to reschedule)`,
+      `n. Next stop   p. Prev stop`,
+      `r. Recap (overview)   0. Exit`,
+    );
+  }
+  return lines.join("\n");
+}
+
+// Conditional per-stop status transition. Only flips orders that are still in
+// the expected `from` status — matches the bulk-status-transitions parity rule
+// so concurrent dashboard updates never get rewound.
+async function walkApplyTransition(
+  ids: number[],
+  from: "pending" | "ready",
+  to: "picked_up" | "delivered" | "missed",
+): Promise<{ ok: number; skipped: number }> {
+  let ok = 0, skipped = 0;
+  for (const id of ids) {
+    const updated = await db.update(ordersTable)
+      .set({ status: to })
+      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, from)))
+      .returning();
+    if (updated.length === 0) { skipped++; continue; }
+    const o = updated[0]!;
+    const msg = customerStatusMessage(o, to);
+    // Fire-and-forget the customer SMS so (a) a single Twilio failure can't
+    // abort the rest of the stop, and (b) we don't blow the 15s webhook
+    // timeout on a stop with many orders. Same pattern as bulk-status.ts.
+    if (msg) {
+      notifyCustomer(o, msg).catch((err) => {
+        logger.warn({ err, orderId: o.id, to }, "Walk: customer notify failed");
+      });
+    }
+    ok++;
+  }
+  return { ok, skipped };
+}
+
+async function startRouteWalk(date: string, dir: RouteDir, wave: RouteWave): Promise<{
+  message: string;
+  state: RouteWalkState | null;
+}> {
+  const d = isoToDate(date);
+  if (!isRouteDay(d)) {
+    return { message: `No route on ${WD_FULL[d.getDay()]} (${date}). The business runs Mon–Thu only.`, state: null };
+  }
+  const { orders, orphans } = await fetchRouteOrders(date, dir, wave);
+  const orphanWarning = orphans.length > 0
+    ? `\n\n⚠️ ${orphans.length} order${orphans.length !== 1 ? "s" : ""} not in any wave (towns: ${[...new Set(orphans.map((o) => o.town))].join(", ")}). Reassign the town(s) or update the order(s).`
+    : "";
+  if (orders.length === 0) {
+    const base = dir === "delivery"
+      ? `No ${wave} deliveries — nothing from that wave is currently at the cleaners.`
+      : `No ${wave} pickups for ${date}.`;
+    return { message: base + orphanWarning, state: null };
+  }
+  const { computeOptimizedRoute } = await import("../lib/route-service");
+  const route = await computeOptimizedRoute(orders, dir, { townOrder: WAVE_ORDER[wave] });
+  const state: RouteWalkState = {
+    dir, date, wave, idx: -1,
+    stops: route.stops.map((s) => ({
+      colony: s.colony, town: s.town, addr: s.addressHint ?? null, ids: s.orderIds,
+    })),
+  };
+  return { message: walkOverviewMessage(state) + orphanWarning, state };
 }
 
 // ─── New-order (admin-initiated) flow scratch ─────────────────────────────────
@@ -1770,9 +1923,85 @@ async function handleAdminCommand(from: string, text: string, raw: string): Prom
     }
     if (!/^[12]$/.test(text)) return `Reply 1 (Morning) or 2 (Afternoon), or "0" to go back.`;
     const wave: RouteWave = text === "1" ? "morning" : "afternoon";
-    const result = await actionRouteForDate(date, dir, wave);
-    await setAdminStep(from, "admin_main");
-    return `${result}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    const { message, state } = await startRouteWalk(date, dir, wave);
+    if (!state) {
+      await setAdminStep(from, "admin_main");
+      return `${message}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    await setAdminStep(from, "admin_route_walk", writeWalk(state));
+    return message;
+  }
+
+  // ── Route walk-through (per-stop stepper) ─────────────────────────────────
+  if (step === "admin_route_walk") {
+    const state = readWalk(session?.items ?? null);
+    if (!state) {
+      await setAdminStep(from, "admin_main");
+      return `Lost track of the route — please start again.\n\n———\n\n${ADMIN_MAIN_MENU}`;
+    }
+    // Already-handled at the global intercept: "0"/"menu"/"back" exits walk
+    // mode by resetting to main menu (line ~1100). Don't need to handle here.
+
+    // ── Overview mode: jump to a stop ───────────────────────────────────────
+    if (state.idx === -1) {
+      if (text === "go" || text === "start" || text === "1") {
+        state.idx = 0;
+        await setAdminStep(from, "admin_route_walk", writeWalk(state));
+        return await walkStopMessage(state);
+      }
+      const n = parseInt(text, 10);
+      if (!isNaN(n) && n >= 1 && n <= state.stops.length) {
+        state.idx = n - 1;
+        await setAdminStep(from, "admin_route_walk", writeWalk(state));
+        return await walkStopMessage(state);
+      }
+      return `Reply "go" to start at stop 1, a number 1-${state.stops.length} to jump, or "0" to exit.`;
+    }
+
+    // ── At-a-stop mode ──────────────────────────────────────────────────────
+    const stop = state.stops[state.idx]!;
+    const advance = async (): Promise<string> => {
+      if (state.idx + 1 >= state.stops.length) {
+        await setAdminStep(from, "admin_main");
+        const finishedHead = state.dir === "delivery" ? "🎉 Delivery route complete!" : "🎉 Pickup route complete!";
+        return `${finishedHead}\n\n———\n\n${ADMIN_MAIN_MENU}`;
+      }
+      state.idx += 1;
+      await setAdminStep(from, "admin_route_walk", writeWalk(state));
+      return await walkStopMessage(state);
+    };
+
+    if (text === "n" || text === "next") return await advance();
+    if (text === "p" || text === "prev" || text === "back") {
+      state.idx = Math.max(0, state.idx - 1);
+      await setAdminStep(from, "admin_route_walk", writeWalk(state));
+      return await walkStopMessage(state);
+    }
+    if (text === "r" || text === "recap" || text === "overview") {
+      state.idx = -1;
+      await setAdminStep(from, "admin_route_walk", writeWalk(state));
+      return walkOverviewMessage(state);
+    }
+
+    if (text === "1") {
+      const to = state.dir === "delivery" ? "delivered" as const : "picked_up" as const;
+      const from_ = state.dir === "delivery" ? "ready" as const : "pending" as const;
+      const { ok, skipped } = await walkApplyTransition(stop.ids, from_, to);
+      const verb = state.dir === "delivery" ? "delivered" : "picked up";
+      const summary = `✅ Marked ${ok} ${verb}${skipped ? ` (${skipped} skipped — already moved on)` : ""}.`;
+      const nextMsg = await advance();
+      return `${summary}\n\n———\n\n${nextMsg}`;
+    }
+    if (text === "2" && state.dir === "pickup") {
+      const { ok, skipped } = await walkApplyTransition(stop.ids, "pending", "missed");
+      const summary = `✅ Marked ${ok} missed${skipped ? ` (${skipped} skipped — already moved on)` : ""}; customer${ok !== 1 ? "s" : ""} notified to reschedule.`;
+      const nextMsg = await advance();
+      return `${summary}\n\n———\n\n${nextMsg}`;
+    }
+    const actionsHint = state.dir === "delivery"
+      ? `Reply 1 to mark all delivered, n/p to navigate, r for recap, 0 to exit.`
+      : `Reply 1 to mark picked up, 2 to mark missed, n/p to navigate, r for recap, 0 to exit.`;
+    return actionsHint;
   }
 
   // ── New order flow (admin-initiated) ──────────────────────────────────────
