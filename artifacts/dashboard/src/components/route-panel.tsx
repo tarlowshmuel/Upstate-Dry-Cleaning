@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navigation, MapPin, Phone, Key, Package, AlertTriangle, Route as RouteIcon, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RouteMap } from "./route-map";
 
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
 
@@ -371,6 +372,19 @@ export function RoutePanel() {
         )}
         {!collapsed && (
         <>
+        <RouteMap
+          start={data.start}
+          end={data.end}
+          stops={data.stops.map((s) => ({
+            index: s.index,
+            colony: s.colony,
+            town: s.town,
+            lat: s.lat,
+            lng: s.lng,
+            ungeocoded: s.ungeocoded,
+            orderCount: s.orders.length,
+          }))}
+        />
         <div className="text-xs text-muted-foreground font-mono">
           Start: {data.start.address}
         </div>
