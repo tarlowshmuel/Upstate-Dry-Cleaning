@@ -177,6 +177,11 @@ export default function Legal() {
                 agreed-upon location and provide accurate gate codes when
                 applicable.
               </p>
+              <p className="mt-2 font-medium">
+                Return schedule: our service currently returns clean clothing no
+                later than Thursday. If a Friday return is ever necessary, we
+                will be in touch with you directly to make arrangements.
+              </p>
             </section>
 
             <section>
