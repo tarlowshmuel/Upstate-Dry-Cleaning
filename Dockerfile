@@ -26,7 +26,7 @@ WORKDIR /repo
 RUN corepack enable
 
 # Copy lockfile + workspace manifests first so dependency install caches well.
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json tsconfig.json ./
+COPY .npmrc pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json tsconfig.json ./
 COPY lib/db/package.json lib/db/
 COPY lib/api-spec/package.json lib/api-spec/
 COPY lib/api-zod/package.json lib/api-zod/
