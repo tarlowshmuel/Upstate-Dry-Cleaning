@@ -35,6 +35,7 @@ COPY artifacts/api-server/package.json artifacts/api-server/
 
 # Install ALL workspace deps the api-server transitively needs.
 RUN pnpm install --frozen-lockfile \
+  --config.onlyBuiltDependencies='["*"]' \
   --filter @workspace/api-server... \
   --filter @workspace/db... \
   --filter @workspace/api-zod...
